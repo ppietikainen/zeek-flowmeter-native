@@ -1,0 +1,8 @@
+##! Generated from VERSION by CMake into scripts/version.zeek (not in git).
+
+module FlowMeter;
+
+export {
+	## Plugin version, from the VERSION file.
+	const version = "@FLOWMETER_VERSION@";
+}

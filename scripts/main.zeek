@@ -1,13 +1,12 @@
 ##! Per-connection flow statistics from the Flow::Meter native plugin.
 ##! One row per connection in flowmeter.log, keyed by uid.
 
+@load ./version
+
 module FlowMeter;
 
 export {
 	redef enum Log::ID += { LOG, CONFIG_LOG };
-
-	## Version of this script and plugin (keep equal to VERSION).
-	const version = "0.1.0";
 
 	## A gap between packets above this ends an active period (CIC: 5 s).
 	const activity_timeout = 5sec &redef;

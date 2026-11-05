@@ -205,9 +205,11 @@ zeek::plugin::Configuration Plugin::Configure() {
     zeek::plugin::Configuration config;
     config.name = "Flow::Meter";
     config.description = "Per-connection flow statistics (CICFlowMeter-style features)";
-    config.version.major = 0;
-    config.version.minor = 1;
-    config.version.patch = 0;
+    int ma = 0, mi = 0, pa = 0;
+    sscanf(FLOWMETER_VERSION, "%d.%d.%d", &ma, &mi, &pa);
+    config.version.major = ma;
+    config.version.minor = mi;
+    config.version.patch = pa;
     // Registered so the child analyzer used for unknown IP transports has a tag.
     AddComponent(new zeek::analyzer::Component("FlowMeter", nullptr));
     EnableHook(zeek::plugin::HOOK_SETUP_ANALYZER_TREE);
