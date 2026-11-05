@@ -22,57 +22,57 @@ select p.uid, p.same, f.*, r.* from pair p join fm f using (uid) join (select ro
 create or replace macro fw(same, a, b) as case when same then a else b end;
 create or replace table concepts as
 select * from (
-select 'duration_s' c, "Flow Duration"/1e6 cicv, "s.duration" fmv from cmp union all
-select 'fwd_pkts', fw(same, "Total Fwd Packet","Total Bwd packets"), "s.orig_pkts" from cmp union all
-select 'bwd_pkts', fw(same, "Total Bwd packets","Total Fwd Packet"), "s.resp_pkts" from cmp union all
-select 'fwd_bytes', fw(same, "Total Length of Fwd Packet","Total Length of Bwd Packet"), "s.orig_bytes" from cmp union all
-select 'bwd_bytes', fw(same, "Total Length of Bwd Packet","Total Length of Fwd Packet"), "s.resp_bytes" from cmp union all
-select 'fwd_len_max', fw(same, "Fwd Packet Length Max","Bwd Packet Length Max"), "s.orig_len_max" from cmp union all
-select 'fwd_len_min', fw(same, "Fwd Packet Length Min","Bwd Packet Length Min"), "s.orig_len_min" from cmp union all
-select 'fwd_len_mean', fw(same, "Fwd Packet Length Mean","Bwd Packet Length Mean"), "s.orig_len_mean" from cmp union all
-select 'fwd_len_std', fw(same, "Fwd Packet Length Std","Bwd Packet Length Std"), "s.orig_len_std" from cmp union all
-select 'bwd_len_mean', fw(same, "Bwd Packet Length Mean","Fwd Packet Length Mean"), "s.resp_len_mean" from cmp union all
-select 'flow_iat_mean_us', "Flow IAT Mean", "s.iat_mean"*1e6 from cmp union all
-select 'flow_iat_max_us', "Flow IAT Max", "s.iat_max"*1e6 from cmp union all
-select 'flow_iat_min_us', "Flow IAT Min", "s.iat_min"*1e6 from cmp union all
-select 'flow_iat_std_us', "Flow IAT Std", "s.iat_std"*1e6 from cmp union all
-select 'fwd_iat_total_us', fw(same, "Fwd IAT Total","Bwd IAT Total"), "s.orig_iat_total"*1e6 from cmp union all
-select 'fwd_iat_mean_us', fw(same, "Fwd IAT Mean","Bwd IAT Mean"), "s.orig_iat_mean"*1e6 from cmp union all
-select 'fwd_iat_max_us', fw(same, "Fwd IAT Max","Bwd IAT Max"), "s.orig_iat_max"*1e6 from cmp union all
-select 'fwd_psh', fw(same, "Fwd PSH Flags","Bwd PSH Flags"), "s.orig_psh" from cmp union all
-select 'fwd_urg', fw(same, "Fwd URG Flags","Bwd URG Flags"), "s.orig_urg" from cmp union all
-select 'fwd_hdr', fw(same, "Fwd Header Length","Bwd Header Length"), "s.orig_header" from cmp union all
-select 'bwd_hdr', fw(same, "Bwd Header Length","Fwd Header Length"), "s.resp_header" from cmp union all
-select 'len_min', "Packet Length Min", "s.len_min" from cmp union all
-select 'len_max', "Packet Length Max", "s.len_max" from cmp union all
-select 'len_mean', "Packet Length Mean", "s.len_mean" from cmp union all
-select 'len_std', "Packet Length Std", "s.len_std" from cmp union all
-select 'fin', "FIN Flag Count", "s.orig_fin"+"s.resp_fin" from cmp union all
-select 'syn', "SYN Flag Count", "s.orig_syn"+"s.resp_syn" from cmp union all
-select 'rst', "RST Flag Count", "s.orig_rst"+"s.resp_rst" from cmp union all
-select 'psh', "PSH Flag Count", "s.orig_psh"+"s.resp_psh" from cmp union all
-select 'ack', "ACK Flag Count", "s.orig_ack"+"s.resp_ack" from cmp union all
-select 'urg', "URG Flag Count", "s.orig_urg"+"s.resp_urg" from cmp union all
-select 'cwr', "CWR Flag Count", "s.orig_cwr"+"s.resp_cwr" from cmp union all
-select 'ece', "ECE Flag Count", "s.orig_ece"+"s.resp_ece" from cmp union all
-select 'fwd_seg_avg', fw(same, "Fwd Segment Size Avg","Bwd Segment Size Avg"), "s.orig_len_mean" from cmp union all
-select 'subflow_fwd_pkts', fw(same, "Subflow Fwd Packets","Subflow Bwd Packets"), "s.orig_pkts"/"s.subflows"::double from cmp union all
-select 'subflow_fwd_bytes', fw(same, "Subflow Fwd Bytes","Subflow Bwd Bytes"), "s.orig_bytes"/"s.subflows"::double from cmp union all
-select 'fwd_init_win', fw(same, "FWD Init Win Bytes","Bwd Init Win Bytes"), "s.orig_init_win" from cmp union all
-select 'bwd_init_win', fw(same, "Bwd Init Win Bytes","FWD Init Win Bytes"), "s.resp_init_win" from cmp union all
-select 'fwd_act_data', fw(same, "Fwd Act Data Pkts","Bwd Act Data Pkts"), "s.orig_data_pkts" from cmp union all
-select 'fwd_seg_min', fw(same, "Fwd Seg Size Min","Bwd Seg Size Min"), "s.orig_min_seg" from cmp union all
-select 'active_mean_us', "Active Mean", "s.active_mean"*1e6 from cmp union all
-select 'active_max_us', "Active Max", "s.active_max"*1e6 from cmp union all
-select 'idle_mean_us', "Idle Mean", "s.idle_mean"*1e6 from cmp union all
-select 'idle_max_us', "Idle Max", "s.idle_max"*1e6 from cmp union all
-select 'fwd_bulk_pkts_avg', fw(same, "Fwd Packet/Bulk Avg","Bwd Packet/Bulk Avg"), case when "s.orig_bulk_states">0 then "s.orig_bulk_pkts"/"s.orig_bulk_states"::double else 0 end from cmp union all
-select 'fwd_bulk_bytes_avg', fw(same, "Fwd Bytes/Bulk Avg","Bwd Bytes/Bulk Avg"), case when "s.orig_bulk_states">0 then "s.orig_bulk_bytes"/"s.orig_bulk_states"::double else 0 end from cmp union all
-select 'fwd_payload_total', fw(same, "Fwd Segment Payload Length Total","Bwd Segment Payload Length Total"), "s.orig_payload" from cmp union all
-select 'fwd_payload_max', fw(same, "Fwd Segment Payload Length Max","Bwd Segment Payload Length Max"), "s.orig_pay_max" from cmp union all
-select 'fwd_payload_min', fw(same, "Fwd Segment Payload Length Min","Bwd Segment Payload Length Min"), "s.orig_pay_min" from cmp union all
-select 'fwd_payload_mean', fw(same, "Fwd Segment Payload Length Mean","Bwd Segment Payload Length Mean"), "s.orig_pay_mean" from cmp union all
-select 'fwd_payload_std', fw(same, "Fwd Segment Payload Length Std","Bwd Segment Payload Length Std"), "s.orig_pay_std" from cmp
+select 'duration_s' c, "Flow Duration"/1e6 cicv, "fm.duration" fmv from cmp union all
+select 'fwd_pkts', fw(same, "Total Fwd Packet","Total Bwd packets"), "fm.orig_pkts" from cmp union all
+select 'bwd_pkts', fw(same, "Total Bwd packets","Total Fwd Packet"), "fm.resp_pkts" from cmp union all
+select 'fwd_bytes', fw(same, "Total Length of Fwd Packet","Total Length of Bwd Packet"), "fm.orig_bytes" from cmp union all
+select 'bwd_bytes', fw(same, "Total Length of Bwd Packet","Total Length of Fwd Packet"), "fm.resp_bytes" from cmp union all
+select 'fwd_len_max', fw(same, "Fwd Packet Length Max","Bwd Packet Length Max"), "fm.orig_len_max" from cmp union all
+select 'fwd_len_min', fw(same, "Fwd Packet Length Min","Bwd Packet Length Min"), "fm.orig_len_min" from cmp union all
+select 'fwd_len_mean', fw(same, "Fwd Packet Length Mean","Bwd Packet Length Mean"), "fm.orig_len_mean" from cmp union all
+select 'fwd_len_std', fw(same, "Fwd Packet Length Std","Bwd Packet Length Std"), "fm.orig_len_std" from cmp union all
+select 'bwd_len_mean', fw(same, "Bwd Packet Length Mean","Fwd Packet Length Mean"), "fm.resp_len_mean" from cmp union all
+select 'flow_iat_mean_us', "Flow IAT Mean", "fm.iat_mean"*1e6 from cmp union all
+select 'flow_iat_max_us', "Flow IAT Max", "fm.iat_max"*1e6 from cmp union all
+select 'flow_iat_min_us', "Flow IAT Min", "fm.iat_min"*1e6 from cmp union all
+select 'flow_iat_std_us', "Flow IAT Std", "fm.iat_std"*1e6 from cmp union all
+select 'fwd_iat_total_us', fw(same, "Fwd IAT Total","Bwd IAT Total"), "fm.orig_iat_total"*1e6 from cmp union all
+select 'fwd_iat_mean_us', fw(same, "Fwd IAT Mean","Bwd IAT Mean"), "fm.orig_iat_mean"*1e6 from cmp union all
+select 'fwd_iat_max_us', fw(same, "Fwd IAT Max","Bwd IAT Max"), "fm.orig_iat_max"*1e6 from cmp union all
+select 'fwd_psh', fw(same, "Fwd PSH Flags","Bwd PSH Flags"), "fm.orig_psh" from cmp union all
+select 'fwd_urg', fw(same, "Fwd URG Flags","Bwd URG Flags"), "fm.orig_urg" from cmp union all
+select 'fwd_hdr', fw(same, "Fwd Header Length","Bwd Header Length"), "fm.orig_header" from cmp union all
+select 'bwd_hdr', fw(same, "Bwd Header Length","Fwd Header Length"), "fm.resp_header" from cmp union all
+select 'len_min', "Packet Length Min", "fm.len_min" from cmp union all
+select 'len_max', "Packet Length Max", "fm.len_max" from cmp union all
+select 'len_mean', "Packet Length Mean", "fm.len_mean" from cmp union all
+select 'len_std', "Packet Length Std", "fm.len_std" from cmp union all
+select 'fin', "FIN Flag Count", "fm.orig_fin"+"fm.resp_fin" from cmp union all
+select 'syn', "SYN Flag Count", "fm.orig_syn"+"fm.resp_syn" from cmp union all
+select 'rst', "RST Flag Count", "fm.orig_rst"+"fm.resp_rst" from cmp union all
+select 'psh', "PSH Flag Count", "fm.orig_psh"+"fm.resp_psh" from cmp union all
+select 'ack', "ACK Flag Count", "fm.orig_ack"+"fm.resp_ack" from cmp union all
+select 'urg', "URG Flag Count", "fm.orig_urg"+"fm.resp_urg" from cmp union all
+select 'cwr', "CWR Flag Count", "fm.orig_cwr"+"fm.resp_cwr" from cmp union all
+select 'ece', "ECE Flag Count", "fm.orig_ece"+"fm.resp_ece" from cmp union all
+select 'fwd_seg_avg', fw(same, "Fwd Segment Size Avg","Bwd Segment Size Avg"), "fm.orig_len_mean" from cmp union all
+select 'subflow_fwd_pkts', fw(same, "Subflow Fwd Packets","Subflow Bwd Packets"), "fm.orig_pkts"/"fm.subflows"::double from cmp union all
+select 'subflow_fwd_bytes', fw(same, "Subflow Fwd Bytes","Subflow Bwd Bytes"), "fm.orig_bytes"/"fm.subflows"::double from cmp union all
+select 'fwd_init_win', fw(same, "FWD Init Win Bytes","Bwd Init Win Bytes"), "fm.orig_init_win" from cmp union all
+select 'bwd_init_win', fw(same, "Bwd Init Win Bytes","FWD Init Win Bytes"), "fm.resp_init_win" from cmp union all
+select 'fwd_act_data', fw(same, "Fwd Act Data Pkts","Bwd Act Data Pkts"), "fm.orig_data_pkts" from cmp union all
+select 'fwd_seg_min', fw(same, "Fwd Seg Size Min","Bwd Seg Size Min"), "fm.orig_min_seg" from cmp union all
+select 'active_mean_us', "Active Mean", "fm.active_mean"*1e6 from cmp union all
+select 'active_max_us', "Active Max", "fm.active_max"*1e6 from cmp union all
+select 'idle_mean_us', "Idle Mean", "fm.idle_mean"*1e6 from cmp union all
+select 'idle_max_us', "Idle Max", "fm.idle_max"*1e6 from cmp union all
+select 'fwd_bulk_pkts_avg', fw(same, "Fwd Packet/Bulk Avg","Bwd Packet/Bulk Avg"), case when "fm.orig_bulk_states">0 then "fm.orig_bulk_pkts"/"fm.orig_bulk_states"::double else 0 end from cmp union all
+select 'fwd_bulk_bytes_avg', fw(same, "Fwd Bytes/Bulk Avg","Bwd Bytes/Bulk Avg"), case when "fm.orig_bulk_states">0 then "fm.orig_bulk_bytes"/"fm.orig_bulk_states"::double else 0 end from cmp union all
+select 'fwd_payload_total', fw(same, "Fwd Segment Payload Length Total","Bwd Segment Payload Length Total"), "fm.orig_payload" from cmp union all
+select 'fwd_payload_max', fw(same, "Fwd Segment Payload Length Max","Bwd Segment Payload Length Max"), "fm.orig_pay_max" from cmp union all
+select 'fwd_payload_min', fw(same, "Fwd Segment Payload Length Min","Bwd Segment Payload Length Min"), "fm.orig_pay_min" from cmp union all
+select 'fwd_payload_mean', fw(same, "Fwd Segment Payload Length Mean","Bwd Segment Payload Length Mean"), "fm.orig_pay_mean" from cmp union all
+select 'fwd_payload_std', fw(same, "Fwd Segment Payload Length Std","Bwd Segment Payload Length Std"), "fm.orig_pay_std" from cmp
 );
 -- equal = relative difference under 1e-6 or both ~0; close = within 1%
 select c concept, count(*) n,

@@ -112,7 +112,7 @@ export {
 	type Info: record {
 		ts: time &log;
 		uid: string &log;
-		s: Stats &log;
+		fm: Stats &log;
 	};
 
 	global flow_done: event(uid: string, s: Stats);
@@ -126,5 +126,5 @@ event zeek_init() &priority=5
 
 event FlowMeter::flow_done(uid: string, s: Stats)
 	{
-	Log::write(LOG, [$ts=s$start, $uid=uid, $s=s]);
+	Log::write(LOG, [$ts=s$start, $uid=uid, $fm=s]);
 	}

@@ -36,11 +36,11 @@ for trace in ("flowdef.pcap", "flowdef-b.pcap", "exthdr.pcap"):
         k = c[r["uid"]]
         for mine, theirs in (("orig_pkts", "orig_pkts"), ("resp_pkts", "resp_pkts"),
                              ("orig_bytes", "orig_ip_bytes"), ("resp_bytes", "resp_ip_bytes")):
-            check(r["s." + mine] == k[theirs], f"{trace} {r['uid']} {mine} {r['s.'+mine]} != {k[theirs]}")
+            check(r["fm." + mine] == k[theirs], f"{trace} {r['uid']} {mine} {r['fm.'+mine]} != {k[theirs]}")
         check(abs(r["ts"] - k["ts"]) < 1e-6, f"{trace} {r['uid']} ts {r['ts']} != {k['ts']}")
         if trace == "exthdr.pcap" and k.get("proto") == "tcp":
-            check((r["s.orig_payload"], r["s.resp_payload"]) == (100, 200),
-                  f"{trace} {r['uid']} payload {r['s.orig_payload']}/{r['s.resp_payload']}")
+            check((r["fm.orig_payload"], r["fm.resp_payload"]) == (100, 200),
+                  f"{trace} {r['uid']} payload {r['fm.orig_payload']}/{r['fm.resp_payload']}")
 
 print("FAILED" if fails else "ok", fails)
 sys.exit(1 if fails else 0)
