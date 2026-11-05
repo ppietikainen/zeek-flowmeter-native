@@ -5,10 +5,12 @@
 
 #include "FlowStats.h"
 #include "zeek/Conn.h"
+#include "zeek/analyzer/Component.h"
 #include "zeek/Event.h"
 #include "zeek/EventRegistry.h"
 #include "zeek/IP.h"
 #include "zeek/Reporter.h"
+#include "zeek/RunState.h"
 #include "zeek/Scope.h"
 #include "zeek/Val.h"
 #include "zeek/Var.h"
@@ -22,17 +24,10 @@ static double activity_timeout = 5.0;  // seconds, CIC's default
 
 namespace {
 
-class Tap final : public zeek::packet_analysis::TapAnalyzer {
+class Meter {
 public:
-    explicit Tap(zeek::Connection* c) : conn(c) {}
-
-    void TapPacket(const zeek::Packet& pkt, zeek::packet_analysis::PacketAction,
-                   zeek::packet_analysis::SkipReason) override {
-        const auto& ip = pkt.ip_hdr;
-        if ( ! ip )
-            return;
-        double t = pkt.time;
-        Dir& d = f.d[pkt.is_orig ? 0 : 1];
+    void Observe(double t, bool is_orig, const zeek::IP_Hdr* ip) {
+        Dir& d = f.d[is_orig ? 0 : 1];
         uint32_t total = ip->TotalLen();
         uint32_t hdr = ip->HdrLen();
         uint32_t l4 = ip->PayloadLen();
@@ -71,7 +66,7 @@ public:
         f.len.Add(total);
 
         if ( payload > 0 ) {
-            Dir& o = f.d[pkt.is_orig ? 1 : 0];
+            Dir& o = f.d[is_orig ? 1 : 0];
             // The other side sending payload ends our candidate run.
             o.bulk_cnt_h = 0;
             if ( d.bulk_cnt_h == 0 || t - d.bulk_last > 1.0 ) {
@@ -121,7 +116,7 @@ public:
         }
     }
 
-    void Done() override {
+    void Emit(zeek::Connection* conn) {
         if ( ! flow_done || ! stats_type || f.first < 0 )
             return;
         if ( f.active_start >= 0 )
@@ -158,9 +153,47 @@ public:
                                 std::move(r));
     }
 
+
+private:
+    Flow f;
+};
+
+class Tap final : public zeek::packet_analysis::TapAnalyzer {
+public:
+    explicit Tap(zeek::Connection* c) : conn(c) {}
+
+    void TapPacket(const zeek::Packet& pkt, zeek::packet_analysis::PacketAction,
+                   zeek::packet_analysis::SkipReason) override {
+        if ( pkt.ip_hdr )
+            m.Observe(pkt.time, pkt.is_orig, pkt.ip_hdr.get());
+    }
+
+    void Done() override { m.Emit(conn); }
+
 private:
     zeek::Connection* conn;
-    Flow f;
+    Meter m;
+};
+
+// Zeek's tap never sees packets of unknown IP transports (ESP, OSPF, ...), but a
+// child analyzer of the session does, as ConnSize shows.
+class Child final : public zeek::analyzer::Analyzer {
+public:
+    explicit Child(zeek::Connection* c) : zeek::analyzer::Analyzer("FlowMeter", c) {}
+
+    void Done() override {
+        zeek::analyzer::Analyzer::Done();
+        m.Emit(Conn());
+    }
+
+protected:
+    void DeliverPacket(int, const u_char*, bool is_orig, uint64_t, const zeek::IP_Hdr* ip, int) override {
+        if ( ip )
+            m.Observe(zeek::run_state::network_time, is_orig, ip);
+    }
+
+private:
+    Meter m;
 };
 
 } // namespace
@@ -172,6 +205,8 @@ zeek::plugin::Configuration Plugin::Configure() {
     config.version.major = 0;
     config.version.minor = 1;
     config.version.patch = 0;
+    // Registered so the child analyzer used for unknown IP transports has a tag.
+    AddComponent(new zeek::analyzer::Component("FlowMeter", nullptr));
     EnableHook(zeek::plugin::HOOK_SETUP_ANALYZER_TREE);
     return config;
 }
@@ -190,6 +225,10 @@ void Plugin::InitPostScript() {
 void Plugin::HookSetupAnalyzerTree(zeek::Connection* conn) {
     if ( ! stats_type )
         return;
-    if ( auto* a = conn->GetSessionAdapter() )
-        a->AddTapAnalyzer(std::make_unique<Tap>(conn));
+    if ( auto* a = conn->GetSessionAdapter() ) {
+        if ( strcmp(a->GetAnalyzerName(), "UNKNOWN_IP_TRANSPORT") == 0 )
+            a->AddChildAnalyzer(new Child(conn));
+        else
+            a->AddTapAnalyzer(std::make_unique<Tap>(conn));
+    }
 }

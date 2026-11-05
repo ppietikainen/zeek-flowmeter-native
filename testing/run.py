@@ -28,7 +28,7 @@ def check(ok, msg):
         fails += 1
         print("FAIL", msg)
 
-for trace in ("flowdef.pcap", "flowdef-b.pcap", "exthdr.pcap"):
+for trace in ("flowdef.pcap", "flowdef-b.pcap", "exthdr.pcap", "other.pcap"):
     conn, fm = run(trace)
     c = {r["uid"]: r for r in conn}
     check(len(fm) == len(conn), f"{trace}: {len(fm)} flowmeter rows vs {len(conn)} conn rows")
