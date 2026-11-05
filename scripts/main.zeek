@@ -23,7 +23,9 @@ export {
 	## transport payload from the IP layer, not from sequence numbers. Times and
 	## IATs are seconds; start is the first packet of the connection.
 	## Standard deviations are sample (n-1) as in CIC. The last active period is
-	## included in active_*. Truncated packets count with their on-wire length. orig/resp are Zeek's
+	## included in active_*. *_skipped counts packets Zeek did not analyze (bad checksum, bad header);
+	## they are still included in every other statistic, so conn.log's packet counts equal
+	## *_pkts - *_skipped. Truncated packets count with their on-wire length. orig/resp are Zeek's
 	## connection roles. Bulk: CIC's rule (4+ payload packets within 1 s, uninterrupted
 	## by payload from the other side). subflows = 1 + gaps over 1 s.
 	## orig/resp follow Zeek's connection roles, not the first packet seen.
@@ -62,6 +64,8 @@ export {
 		orig_bulk_pkts: count &log;
 		orig_bulk_bytes: count &log;
 		orig_bulk_dur: double &log;
+		orig_skipped: count &log;
+		orig_skip_badsum: count &log;
 		resp_pkts: count &log;
 		resp_bytes: count &log;
 		resp_payload: count &log;
@@ -94,6 +98,8 @@ export {
 		resp_bulk_pkts: count &log;
 		resp_bulk_bytes: count &log;
 		resp_bulk_dur: double &log;
+		resp_skipped: count &log;
+		resp_skip_badsum: count &log;
 		len_min: double &log;
 		len_max: double &log;
 		len_mean: double &log;

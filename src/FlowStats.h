@@ -35,6 +35,7 @@ struct Dir {
     Running iat;        // gap to previous packet in this direction, seconds
     double last = -1;
     uint64_t psh = 0, urg = 0, fin = 0, syn = 0, rst = 0, ack = 0, cwr = 0, ece = 0;
+    uint64_t skipped = 0, skip_badsum = 0;  // packets Zeek did not analyze (still counted above)
     uint64_t data_pkts = 0;      // packets with L4 payload > 0
     uint32_t min_seg = 0;        // min TCP header length seen
     bool have_win = false;

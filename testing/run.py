@@ -12,11 +12,11 @@ img = sys.argv[1] if len(sys.argv) > 1 else "localhost/zeek-kit:9.0.0-ja4cpp"
 root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 fails = 0
 
-def run(trace, extra=()):
+def run(trace, extra=(), ignore_checksums=True):
     with tempfile.TemporaryDirectory() as d:
         os.chmod(d, 0o777)
         subprocess.run(["podman", "run", "--rm", "-v", f"{root}:/src:ro,z", "-v", f"{d}:/o:z", "-w", "/o",
-                        "-e", "ZEEK_PLUGIN_PATH=/src/build", "--entrypoint", "zeek", img, "-C", "-r",
+                        "-e", "ZEEK_PLUGIN_PATH=/src/build", "--entrypoint", "zeek", img, *(["-C"] if ignore_checksums else []), "-r",
                         f"/src/testing/traces/{trace}", "Flow::Meter", "LogAscii::use_json=T", *extra],
                        check=True, capture_output=True)
         rd = lambda n: [json.loads(l) for l in open(f"{d}/{n}.log")]
@@ -28,7 +28,7 @@ def check(ok, msg):
         fails += 1
         print("FAIL", msg)
 
-for trace in ("flowdef.pcap", "flowdef-b.pcap", "exthdr.pcap", "other.pcap"):
+for trace in ("flowdef.pcap", "flowdef-b.pcap", "exthdr.pcap", "other.pcap", "flip.pcap"):
     conn, fm = run(trace)
     c = {r["uid"]: r for r in conn}
     check(len(fm) == len(conn), f"{trace}: {len(fm)} flowmeter rows vs {len(conn)} conn rows")
@@ -41,6 +41,13 @@ for trace in ("flowdef.pcap", "flowdef-b.pcap", "exthdr.pcap", "other.pcap"):
         if trace == "exthdr.pcap" and k.get("proto") == "tcp":
             check((r["fm.orig_payload"], r["fm.resp_payload"]) == (100, 200),
                   f"{trace} {r['uid']} payload {r['fm.orig_payload']}/{r['fm.resp_payload']}")
+
+# Bad checksums: Zeek (default settings) skips them, the plugin counts them and says so.
+conn, fm = run("badsum.pcap", ignore_checksums=False)
+r, k = fm[0], conn[0]
+for side in ("orig", "resp"):
+    check(r[f"fm.{side}_pkts"] - r[f"fm.{side}_skipped"] == k[f"{side}_pkts"], f"badsum {side} pkts-skipped")
+    check(r[f"fm.{side}_skip_badsum"] == 1, f"badsum {side} badsum count {r[f'fm.{side}_skip_badsum']}")
 
 print("FAILED" if fails else "ok", fails)
 sys.exit(1 if fails else 0)

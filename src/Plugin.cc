@@ -29,8 +29,10 @@ namespace {
 
 class Meter {
 public:
-    void Observe(double t, bool is_orig, const zeek::IP_Hdr* ip) {
+    void Observe(double t, bool is_orig, const zeek::IP_Hdr* ip, bool skipped = false, bool badsum = false) {
         Dir& d = f.d[is_orig ? 0 : 1];
+        if ( skipped ) d.skipped++;
+        if ( badsum ) d.skip_badsum++;
         uint32_t total = ip->TotalLen();
         uint32_t hdr = ip->HdrLen();
         uint32_t l4 = ip->PayloadLen();
@@ -141,6 +143,7 @@ public:
             cnt(d.psh); cnt(d.urg); cnt(d.fin); cnt(d.syn); cnt(d.rst); cnt(d.ack); cnt(d.cwr); cnt(d.ece);
             cnt(d.data_pkts); cnt(d.min_seg); cnt(d.init_win);
             cnt(d.bulk_states); cnt(d.bulk_pkts); cnt(d.bulk_bytes); dbl(d.bulk_dur);
+            cnt(d.skipped); cnt(d.skip_badsum);
         }
         dbl(f.len.min); dbl(f.len.max); dbl(f.len.mean); dbl(f.len.Std()); dbl(f.len.Var());
         cnt(f.subflows);
@@ -165,10 +168,11 @@ class Tap final : public zeek::packet_analysis::TapAnalyzer {
 public:
     explicit Tap(zeek::Connection* c) : conn(c) {}
 
-    void TapPacket(const zeek::Packet& pkt, zeek::packet_analysis::PacketAction,
-                   zeek::packet_analysis::SkipReason) override {
+    void TapPacket(const zeek::Packet& pkt, zeek::packet_analysis::PacketAction action,
+                   zeek::packet_analysis::SkipReason reason) override {
         if ( pkt.ip_hdr )
-            m.Observe(pkt.time, pkt.is_orig, pkt.ip_hdr.get());
+            m.Observe(pkt.time, pkt.is_orig, pkt.ip_hdr.get(), action == zeek::packet_analysis::PacketAction::Skip,
+                      reason == zeek::packet_analysis::SkipReason::BadChecksum);
     }
 
     void Done() override { m.Emit(conn); }
