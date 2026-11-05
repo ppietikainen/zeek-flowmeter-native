@@ -4,10 +4,19 @@
 module FlowMeter;
 
 export {
-	redef enum Log::ID += { LOG };
+	redef enum Log::ID += { LOG, CONFIG_LOG };
+
+	## Version of this script and plugin (keep equal to VERSION).
+	const version = "0.1.0";
 
 	## A gap between packets above this ends an active period (CIC: 5 s).
 	const activity_timeout = 5sec &redef;
+	## A gap above this starts a new subflow.
+	const subflow_gap = 1sec &redef;
+	## Payload packets closer together than this can form a bulk transfer.
+	const bulk_gap = 1sec &redef;
+	## Payload packets in a row needed to count as a bulk transfer.
+	const bulk_min_packets = 4 &redef;
 
 	## Semantics. Lengths are IP-layer (the IP total length, so header + payload).
 	## *_header is the transport header only, as in CIC (IP header bytes are
@@ -115,6 +124,13 @@ export {
 		fm: Stats &log;
 	};
 
+	## One row per setting that shapes the numbers in flowmeter.log, written at
+	## startup to flowmeter_config.log (a separate table, read whole; there is no join key).
+	type Config: record {
+		key: string &log;
+		value: string &log;
+	};
+
 	global flow_done: event(uid: string, s: Stats);
 	global log_flowmeter: event(rec: Info);
 }
@@ -122,6 +138,29 @@ export {
 event zeek_init() &priority=5
 	{
 	Log::create_stream(LOG, [$columns=Info, $ev=log_flowmeter, $path="flowmeter"]);
+	Log::create_stream(CONFIG_LOG, [$columns=Config, $path="flowmeter_config"]);
+	}
+
+event zeek_init() &priority=-5
+	{
+	local c: table[string] of string = {
+		["plugin_version"] = version,
+		["zeek_version"] = zeek_version(),
+		["activity_timeout_s"] = fmt("%f", interval_to_double(activity_timeout)),
+		["subflow_gap_s"] = fmt("%f", interval_to_double(subflow_gap)),
+		["bulk_gap_s"] = fmt("%f", interval_to_double(bulk_gap)),
+		["bulk_min_packets"] = fmt("%d", bulk_min_packets),
+		["tcp_inactivity_timeout_s"] = fmt("%f", interval_to_double(tcp_inactivity_timeout)),
+		["udp_inactivity_timeout_s"] = fmt("%f", interval_to_double(udp_inactivity_timeout)),
+		["icmp_inactivity_timeout_s"] = fmt("%f", interval_to_double(icmp_inactivity_timeout)),
+		["tcp_attempt_delay_s"] = fmt("%f", interval_to_double(tcp_attempt_delay)),
+		["tcp_close_delay_s"] = fmt("%f", interval_to_double(tcp_close_delay)),
+		["tcp_reset_delay_s"] = fmt("%f", interval_to_double(tcp_reset_delay)),
+		["tcp_partial_close_delay_s"] = fmt("%f", interval_to_double(tcp_partial_close_delay)),
+		["ignore_checksums"] = fmt("%s", ignore_checksums)
+	};
+	for ( k, v in c )
+		Log::write(CONFIG_LOG, [$key=k, $value=v]);
 	}
 
 event FlowMeter::flow_done(uid: string, s: Stats)

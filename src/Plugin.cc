@@ -21,6 +21,9 @@ using namespace zeek::plugin::Flow_Meter;
 static zeek::EventHandlerPtr flow_done;
 static zeek::RecordTypePtr stats_type;
 static double activity_timeout = 5.0;  // seconds, CIC's default
+static double subflow_gap = 1.0;       // seconds
+static double bulk_gap = 1.0;          // seconds
+static uint64_t bulk_min_packets = 4;
 
 namespace {
 
@@ -54,7 +57,7 @@ public:
         else {
             double gap = t - f.last;
             f.flow_iat.Add(gap);
-            if ( gap > 1.0 )
+            if ( gap > subflow_gap )
                 f.subflows++;
             if ( gap > activity_timeout ) {
                 f.active.Add(f.last - f.active_start);
@@ -69,7 +72,7 @@ public:
             Dir& o = f.d[is_orig ? 1 : 0];
             // The other side sending payload ends our candidate run.
             o.bulk_cnt_h = 0;
-            if ( d.bulk_cnt_h == 0 || t - d.bulk_last > 1.0 ) {
+            if ( d.bulk_cnt_h == 0 || t - d.bulk_last > bulk_gap ) {
                 d.bulk_start = t;
                 d.bulk_cnt_h = 1;
                 d.bulk_size_h = payload;
@@ -77,13 +80,13 @@ public:
             else {
                 d.bulk_cnt_h++;
                 d.bulk_size_h += payload;
-                if ( d.bulk_cnt_h == 4 ) {
+                if ( d.bulk_cnt_h == bulk_min_packets ) {
                     d.bulk_states++;
-                    d.bulk_pkts += 4;
+                    d.bulk_pkts += bulk_min_packets;
                     d.bulk_bytes += d.bulk_size_h;
                     d.bulk_dur += t - d.bulk_start;
                 }
-                else if ( d.bulk_cnt_h > 4 ) {
+                else if ( d.bulk_cnt_h > bulk_min_packets ) {
                     d.bulk_pkts++;
                     d.bulk_bytes += payload;
                     d.bulk_dur += t - d.bulk_last;
@@ -218,8 +221,14 @@ void Plugin::InitPostScript() {
         return;
     stats_type = zeek::cast_intrusive<zeek::RecordType>(type_id->GetType());
     flow_done = zeek::event_registry->Register("FlowMeter::flow_done");
-    if ( auto id = zeek::detail::global_scope()->Find("FlowMeter::activity_timeout"); id && id->GetVal() )
-        activity_timeout = id->GetVal()->AsInterval();
+    auto val = [](const char* name) -> zeek::ValPtr {
+        auto id = zeek::detail::global_scope()->Find(name);
+        return id ? id->GetVal() : nullptr;
+    };
+    if ( auto v = val("FlowMeter::activity_timeout") ) activity_timeout = v->AsInterval();
+    if ( auto v = val("FlowMeter::subflow_gap") ) subflow_gap = v->AsInterval();
+    if ( auto v = val("FlowMeter::bulk_gap") ) bulk_gap = v->AsInterval();
+    if ( auto v = val("FlowMeter::bulk_min_packets") ) bulk_min_packets = v->AsCount();
 }
 
 void Plugin::HookSetupAnalyzerTree(zeek::Connection* conn) {
