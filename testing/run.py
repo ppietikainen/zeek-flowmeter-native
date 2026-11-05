@@ -28,16 +28,23 @@ def check(ok, msg):
         fails += 1
         print("FAIL", msg)
 
-for trace in ("flowdef.pcap", "flowdef-b.pcap", "exthdr.pcap", "other.pcap", "flip.pcap"):
+for trace in ("flowdef.pcap", "flowdef-b.pcap", "exthdr.pcap", "other.pcap", "flip.pcap", "flip2.pcap", "trunc.pcap"):
     conn, fm = run(trace)
     c = {r["uid"]: r for r in conn}
     check(len(fm) == len(conn), f"{trace}: {len(fm)} flowmeter rows vs {len(conn)} conn rows")
     for r in fm:
         k = c[r["uid"]]
-        for mine, theirs in (("orig_pkts", "orig_pkts"), ("resp_pkts", "resp_pkts"),
-                             ("orig_bytes", "orig_ip_bytes"), ("resp_bytes", "resp_ip_bytes")):
-            check(r["fm." + mine] == k[theirs], f"{trace} {r['uid']} {mine} {r['fm.'+mine]} != {k[theirs]}")
+        # Identity: packets - skipped (- truncated, ICMP only: Zeek ignores truncated ICMP) = conn.log
+        icmp = k["proto"] == "icmp"
+        for side in ("orig", "resp"):
+            sub = r[f"fm.{side}_skipped"] + (r[f"fm.{side}_truncated"] if icmp else 0)
+            check(r[f"fm.{side}_pkts"] - sub == k[f"{side}_pkts"],
+                  f"{trace} {r['uid']} {side}_pkts {r[f'fm.{side}_pkts']} - {sub} != {k[f'{side}_pkts']}")
+            if not sub and not r[f"fm.{side}_truncated"]:
+                check(r[f"fm.{side}_bytes"] == k[f"{side}_ip_bytes"], f"{trace} {r['uid']} {side}_bytes")
         check(abs(r["ts"] - k["ts"]) < 1e-6, f"{trace} {r['uid']} ts {r['ts']} != {k['ts']}")
+        if trace == "trunc.pcap":
+            check((r["fm.orig_truncated"], r["fm.resp_truncated"]) == ((3, 3) if icmp else (1, 1)), f"{trace} truncated counts")
         if trace == "exthdr.pcap" and k.get("proto") == "tcp":
             check((r["fm.orig_payload"], r["fm.resp_payload"]) == (100, 200),
                   f"{trace} {r['uid']} payload {r['fm.orig_payload']}/{r['fm.resp_payload']}")

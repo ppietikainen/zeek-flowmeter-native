@@ -29,18 +29,40 @@ namespace {
 
 class Meter {
 public:
-    void Observe(double t, bool is_orig, const zeek::IP_Hdr* ip, bool skipped = false, bool badsum = false) {
-        Dir& d = f.d[is_orig ? 0 : 1];
+    // Statistics are kept per endpoint, A = sender of the first packet, B = the other one.
+    // Zeek may flip originator and responder after packets were seen, so which endpoint is
+    // the originator is decided only in Emit(), from the connection's final roles.
+    // cap_ip: IP bytes present in the capture (UINT32_MAX if unknown).
+    void Observe(double t, const zeek::IP_Hdr* ip, uint32_t cap_ip, bool skipped = false, bool badsum = false) {
+        uint32_t total = ip->TotalLen();
+        uint8_t proto = ip->NextProto();
+        uint16_t sport = 0;
+        bool ports = (proto == IPPROTO_TCP || proto == IPPROTO_UDP) && ip->PayloadLen() >= 4 && cap_ip >= ip->HdrLen() + 4;
+        if ( ports ) {
+            sport = *reinterpret_cast<const uint16_t*>(ip->Payload());  // network order
+            has_ports = true;
+        }
+        int idx;
+        if ( ! ep_set[0] || (ep_addr[0] == ip->SrcAddr() && ep_port[0] == sport) )
+            idx = 0;
+        else
+            idx = 1;
+        if ( ! ep_set[idx] ) {
+            ep_set[idx] = true;
+            ep_addr[idx] = ip->SrcAddr();
+            ep_port[idx] = sport;
+        }
+        Dir& d = f.d[idx];
         if ( skipped ) d.skipped++;
         if ( badsum ) d.skip_badsum++;
-        uint32_t total = ip->TotalLen();
+        if ( cap_ip < total ) d.truncated++;
         uint32_t hdr = ip->HdrLen();
         uint32_t l4 = ip->PayloadLen();
         uint32_t l4hdr = 0;
         uint8_t flags = 0;
         uint16_t win = 0;
 
-        if ( ip->NextProto() == IPPROTO_TCP && l4 >= sizeof(tcphdr) ) {
+        if ( ip->NextProto() == IPPROTO_TCP && l4 >= sizeof(tcphdr) && cap_ip >= hdr + sizeof(tcphdr) ) {
             const auto* th = reinterpret_cast<const tcphdr*>(ip->Payload());
             l4hdr = th->th_off * 4;
             flags = th->th_flags;
@@ -71,7 +93,7 @@ public:
         f.len.Add(total);
 
         if ( payload > 0 ) {
-            Dir& o = f.d[is_orig ? 1 : 0];
+            Dir& o = f.d[1 - idx];
             // The other side sending payload ends our candidate run.
             o.bulk_cnt_h = 0;
             if ( d.bulk_cnt_h == 0 || t - d.bulk_last > bulk_gap ) {
@@ -134,8 +156,15 @@ public:
         auto ival = [&](double v) { if ( i < nf ) r->Assign(i, zeek::make_intrusive<zeek::IntervalVal>(v)); i++; };
         r->Assign(i++, zeek::make_intrusive<zeek::TimeVal>(f.first));
         ival(f.last - f.first);
+        // The originator is the endpoint matching the connection's final originator.
+        // ICMP and other protocols carry no ports (Zeek uses type/code), so only the address counts.
+        auto is_orig_ep = [&](int e) {
+            return ep_set[e] && ep_addr[e] == conn->OrigAddr() && (! has_ports || ep_port[e] == conn->OrigPort());
+        };
+        // Endpoint 0 is the originator if it matches; otherwise endpoint 1 is, seen or not.
+        int orig_ep = is_orig_ep(0) ? 0 : 1;
         for ( int k = 0; k < 2; k++ ) {
-            const Dir& d = f.d[k];
+            const Dir& d = f.d[k == 0 ? orig_ep : 1 - orig_ep];
             cnt(d.pkts); cnt(d.bytes); cnt(d.payload); cnt(d.header);
             dbl(d.len.min); dbl(d.len.max); dbl(d.len.mean); dbl(d.len.Std());
             dbl(d.pay.min); dbl(d.pay.max); dbl(d.pay.mean); dbl(d.pay.Std());
@@ -143,7 +172,7 @@ public:
             cnt(d.psh); cnt(d.urg); cnt(d.fin); cnt(d.syn); cnt(d.rst); cnt(d.ack); cnt(d.cwr); cnt(d.ece);
             cnt(d.data_pkts); cnt(d.min_seg); cnt(d.init_win);
             cnt(d.bulk_states); cnt(d.bulk_pkts); cnt(d.bulk_bytes); dbl(d.bulk_dur);
-            cnt(d.skipped); cnt(d.skip_badsum);
+            cnt(d.skipped); cnt(d.skip_badsum); cnt(d.truncated);
         }
         dbl(f.len.min); dbl(f.len.max); dbl(f.len.mean); dbl(f.len.Std()); dbl(f.len.Var());
         cnt(f.subflows);
@@ -162,6 +191,10 @@ public:
 
 private:
     Flow f;
+    zeek::IPAddr ep_addr[2];
+    uint16_t ep_port[2] = {0, 0};
+    bool ep_set[2] = {false, false};
+    bool has_ports = false;
 };
 
 class Tap final : public zeek::packet_analysis::TapAnalyzer {
@@ -170,9 +203,17 @@ public:
 
     void TapPacket(const zeek::Packet& pkt, zeek::packet_analysis::PacketAction action,
                    zeek::packet_analysis::SkipReason reason) override {
-        if ( pkt.ip_hdr )
-            m.Observe(pkt.time, pkt.is_orig, pkt.ip_hdr.get(), action == zeek::packet_analysis::PacketAction::Skip,
+        if ( pkt.ip_hdr ) {
+            // IP bytes in the capture, when the IP header points into the captured data
+            uint32_t cap_ip = UINT32_MAX;
+            const u_char* start = pkt.ip_hdr->IP4_Hdr() ? reinterpret_cast<const u_char*>(pkt.ip_hdr->IP4_Hdr())
+                                                         : reinterpret_cast<const u_char*>(pkt.ip_hdr->IP6_Hdr());
+            const u_char* end = pkt.data + pkt.cap_len;
+            if ( pkt.data && start >= pkt.data && start <= end )
+                cap_ip = end - start;
+            m.Observe(pkt.time, pkt.ip_hdr.get(), cap_ip, action == zeek::packet_analysis::PacketAction::Skip,
                       reason == zeek::packet_analysis::SkipReason::BadChecksum);
+        }
     }
 
     void Done() override { m.Emit(conn); }
@@ -196,7 +237,7 @@ public:
 protected:
     void DeliverPacket(int, const u_char*, bool is_orig, uint64_t, const zeek::IP_Hdr* ip, int) override {
         if ( ip )
-            m.Observe(zeek::run_state::network_time, is_orig, ip);
+            m.Observe(zeek::run_state::network_time, ip, UINT32_MAX);
     }
 
 private:
