@@ -9,6 +9,7 @@
 #include "zeek/EventRegistry.h"
 #include "zeek/IP.h"
 #include "zeek/Reporter.h"
+#include "zeek/Scope.h"
 #include "zeek/Val.h"
 #include "zeek/Var.h"
 #include "zeek/packet_analysis/protocol/ip/SessionAdapter.h"
@@ -58,6 +59,8 @@ public:
         else {
             double gap = t - f.last;
             f.flow_iat.Add(gap);
+            if ( gap > 1.0 )
+                f.subflows++;
             if ( gap > activity_timeout ) {
                 f.active.Add(f.last - f.active_start);
                 f.idle.Add(gap);
@@ -65,6 +68,34 @@ public:
             }
         }
         f.last = t;
+        f.len.Add(total);
+
+        if ( payload > 0 ) {
+            Dir& o = f.d[pkt.is_orig ? 1 : 0];
+            // The other side sending payload ends our candidate run.
+            o.bulk_cnt_h = 0;
+            if ( d.bulk_cnt_h == 0 || t - d.bulk_last > 1.0 ) {
+                d.bulk_start = t;
+                d.bulk_cnt_h = 1;
+                d.bulk_size_h = payload;
+            }
+            else {
+                d.bulk_cnt_h++;
+                d.bulk_size_h += payload;
+                if ( d.bulk_cnt_h == 4 ) {
+                    d.bulk_states++;
+                    d.bulk_pkts += 4;
+                    d.bulk_bytes += d.bulk_size_h;
+                    d.bulk_dur += t - d.bulk_start;
+                }
+                else if ( d.bulk_cnt_h > 4 ) {
+                    d.bulk_pkts++;
+                    d.bulk_bytes += payload;
+                    d.bulk_dur += t - d.bulk_last;
+                }
+            }
+            d.bulk_last = t;
+        }
 
         if ( d.last >= 0 )
             d.iat.Add(t - d.last);
@@ -99,6 +130,7 @@ public:
         auto cnt = [&](uint64_t v) { r->Assign(i++, zeek::val_mgr->Count(v)); };
         auto dbl = [&](double v) { r->Assign(i++, zeek::make_intrusive<zeek::DoubleVal>(v)); };
         auto ival = [&](double v) { r->Assign(i++, zeek::make_intrusive<zeek::IntervalVal>(v)); };
+        r->Assign(i++, zeek::make_intrusive<zeek::TimeVal>(f.first));
         ival(f.last - f.first);
         for ( int k = 0; k < 2; k++ ) {
             const Dir& d = f.d[k];
@@ -107,7 +139,10 @@ public:
             dbl(d.iat.sum); dbl(d.iat.min); dbl(d.iat.max); dbl(d.iat.mean); dbl(d.iat.Std());
             cnt(d.psh); cnt(d.urg); cnt(d.fin); cnt(d.syn); cnt(d.rst); cnt(d.ack); cnt(d.cwr); cnt(d.ece);
             cnt(d.data_pkts); cnt(d.min_seg); cnt(d.init_win);
+            cnt(d.bulk_states); cnt(d.bulk_pkts); cnt(d.bulk_bytes); dbl(d.bulk_dur);
         }
+        dbl(f.len.min); dbl(f.len.max); dbl(f.len.mean); dbl(f.len.Std()); dbl(f.len.Var());
+        cnt(f.subflows);
         dbl(f.flow_iat.sum); dbl(f.flow_iat.min); dbl(f.flow_iat.max); dbl(f.flow_iat.mean); dbl(f.flow_iat.Std());
         cnt(f.active.n); dbl(f.active.min); dbl(f.active.max); dbl(f.active.mean); dbl(f.active.Std());
         cnt(f.idle.n); dbl(f.idle.min); dbl(f.idle.max); dbl(f.idle.mean); dbl(f.idle.Std());
@@ -139,13 +174,19 @@ zeek::plugin::Configuration Plugin::Configure() {
 }
 
 void Plugin::InitPostScript() {
+    // Scripts may not be loaded (zeek -N, other script sets): stay inert then.
+    auto type_id = zeek::detail::global_scope()->Find("FlowMeter::Stats");
+    if ( ! type_id || ! type_id->IsType() )
+        return;
+    stats_type = zeek::cast_intrusive<zeek::RecordType>(type_id->GetType());
     flow_done = zeek::event_registry->Register("FlowMeter::flow_done");
-    stats_type = zeek::id::find_type<zeek::RecordType>("FlowMeter::Stats");
-    if ( auto id = zeek::id::find_val("FlowMeter::activity_timeout") )
-        activity_timeout = id->AsInterval();
+    if ( auto id = zeek::detail::global_scope()->Find("FlowMeter::activity_timeout"); id && id->GetVal() )
+        activity_timeout = id->GetVal()->AsInterval();
 }
 
 void Plugin::HookSetupAnalyzerTree(zeek::Connection* conn) {
+    if ( ! stats_type )
+        return;
     if ( auto* a = conn->GetSessionAdapter() )
         a->AddTapAnalyzer(std::make_unique<Tap>(conn));
 }

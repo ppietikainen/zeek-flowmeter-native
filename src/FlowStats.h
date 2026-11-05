@@ -38,6 +38,12 @@ struct Dir {
     uint32_t min_seg = 0;        // min TCP header length seen
     bool have_win = false;
     uint32_t init_win = 0;       // window of the first packet in this direction
+    // Bulk transfer (CIC rules): >= 4 payload packets, each within 1 s of the
+    // previous one, with no payload packet from the other side in between.
+    double bulk_start = 0, bulk_last = 0;
+    uint64_t bulk_cnt_h = 0, bulk_size_h = 0;       // current candidate run
+    uint64_t bulk_states = 0, bulk_pkts = 0, bulk_bytes = 0;
+    double bulk_dur = 0;
 };
 
 struct Flow {
@@ -47,6 +53,8 @@ struct Flow {
     // Active/idle: a gap above the activity timeout ends an active period.
     Running active, idle;
     double active_start = -1;
+    Running len;                 // IP total length, both directions
+    uint64_t subflows = 1;       // 1 + gaps above the subflow threshold (1 s)
 };
 
 } // namespace zeek::plugin::Flow_Meter

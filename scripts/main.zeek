@@ -9,9 +9,17 @@ export {
 	## A gap between packets above this ends an active period (CIC: 5 s).
 	const activity_timeout = 5sec &redef;
 
-	## Lengths are IP-layer (total length field). Times in seconds.
+	## Semantics. Lengths are IP-layer (the IP total length, so header + payload).
+	## *_header is IP header (with IPv6 extension headers) plus transport header,
+	## unlike CIC, which counts only the transport header. *_payload is the
+	## transport payload from the IP layer, not from sequence numbers. Times and
+	## IATs are seconds; start is the first packet of the connection.
+	## Truncated packets count with their on-wire length. orig/resp are Zeek's
+	## connection roles. Bulk: CIC's rule (4+ payload packets within 1 s, uninterrupted
+	## by payload from the other side). subflows = 1 + gaps over 1 s.
 	## orig/resp follow Zeek's connection roles, not the first packet seen.
 	type Stats: record {
+		start: time &log;
 		duration: interval &log;
 		orig_pkts: count &log;
 		orig_bytes: count &log;
@@ -37,6 +45,10 @@ export {
 		orig_data_pkts: count &log;
 		orig_min_seg: count &log;
 		orig_init_win: count &log;
+		orig_bulk_states: count &log;
+		orig_bulk_pkts: count &log;
+		orig_bulk_bytes: count &log;
+		orig_bulk_dur: double &log;
 		resp_pkts: count &log;
 		resp_bytes: count &log;
 		resp_payload: count &log;
@@ -61,6 +73,16 @@ export {
 		resp_data_pkts: count &log;
 		resp_min_seg: count &log;
 		resp_init_win: count &log;
+		resp_bulk_states: count &log;
+		resp_bulk_pkts: count &log;
+		resp_bulk_bytes: count &log;
+		resp_bulk_dur: double &log;
+		len_min: double &log;
+		len_max: double &log;
+		len_mean: double &log;
+		len_std: double &log;
+		len_var: double &log;
+		subflows: count &log;
 		iat_total: double &log;
 		iat_min: double &log;
 		iat_max: double &log;
@@ -95,5 +117,5 @@ event zeek_init() &priority=5
 
 event FlowMeter::flow_done(uid: string, s: Stats)
 	{
-	Log::write(LOG, [$ts=network_time(), $uid=uid, $s=s]);
+	Log::write(LOG, [$ts=s$start, $uid=uid, $s=s]);
 	}
