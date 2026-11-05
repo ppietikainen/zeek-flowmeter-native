@@ -103,8 +103,10 @@ public:
         d.pkts++;
         d.bytes += total;
         d.payload += payload;
-        d.header += hdr + l4hdr;
+        d.header += l4hdr;
+        d.iphdr += hdr;
         d.len.Add(total);
+        d.pay.Add(payload);
         if ( payload > 0 ) d.data_pkts++;
         if ( l4hdr && ip->NextProto() == IPPROTO_TCP ) {
             if ( d.min_seg == 0 || l4hdr < d.min_seg ) d.min_seg = l4hdr;
@@ -127,19 +129,22 @@ public:
             f.active.Add(f.last - f.active_start);
         auto r = zeek::make_intrusive<zeek::RecordVal>(stats_type);
         int i = 0;
-        auto cnt = [&](uint64_t v) { r->Assign(i++, zeek::val_mgr->Count(v)); };
-        auto dbl = [&](double v) { r->Assign(i++, zeek::make_intrusive<zeek::DoubleVal>(v)); };
-        auto ival = [&](double v) { r->Assign(i++, zeek::make_intrusive<zeek::IntervalVal>(v)); };
+        const int nf = stats_type->NumFields();
+        auto cnt = [&](uint64_t v) { if ( i < nf ) r->Assign(i, zeek::val_mgr->Count(v)); i++; };
+        auto dbl = [&](double v) { if ( i < nf ) r->Assign(i, zeek::make_intrusive<zeek::DoubleVal>(v)); i++; };
+        auto ival = [&](double v) { if ( i < nf ) r->Assign(i, zeek::make_intrusive<zeek::IntervalVal>(v)); i++; };
         r->Assign(i++, zeek::make_intrusive<zeek::TimeVal>(f.first));
         ival(f.last - f.first);
         for ( int k = 0; k < 2; k++ ) {
             const Dir& d = f.d[k];
             cnt(d.pkts); cnt(d.bytes); cnt(d.payload); cnt(d.header);
             dbl(d.len.min); dbl(d.len.max); dbl(d.len.mean); dbl(d.len.Std());
+            dbl(d.pay.min); dbl(d.pay.max); dbl(d.pay.mean); dbl(d.pay.Std());
             dbl(d.iat.sum); dbl(d.iat.min); dbl(d.iat.max); dbl(d.iat.mean); dbl(d.iat.Std());
             cnt(d.psh); cnt(d.urg); cnt(d.fin); cnt(d.syn); cnt(d.rst); cnt(d.ack); cnt(d.cwr); cnt(d.ece);
             cnt(d.data_pkts); cnt(d.min_seg); cnt(d.init_win);
             cnt(d.bulk_states); cnt(d.bulk_pkts); cnt(d.bulk_bytes); dbl(d.bulk_dur);
+            dbl(d.pkts ? double(d.bytes - d.iphdr) / d.pkts : 0.0);
         }
         dbl(f.len.min); dbl(f.len.max); dbl(f.len.mean); dbl(f.len.Std()); dbl(f.len.Var());
         cnt(f.subflows);
