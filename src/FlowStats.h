@@ -5,7 +5,7 @@
 
 namespace zeek::plugin::Flow_Meter {
 
-// Running count/min/max/mean/variance (Welford); sample std (n-1), as CIC (Apache commons).
+// Running count/min/max/mean/variance (Welford); sample std (n-1), as zeek-flowmeter and CIC.
 struct Running {
     uint64_t n = 0;
     double min = 0, max = 0, mean = 0, m2 = 0, sum = 0;
@@ -29,7 +29,7 @@ struct Running {
 
 // Per direction. Lengths are IP-layer: total IP length, and L4 payload bytes.
 struct Dir {
-    uint64_t pkts = 0, bytes = 0, payload = 0, header = 0, iphdr = 0;
+    uint64_t pkts = 0, bytes = 0, payload = 0, header = 0;
     Running len;        // IP total length per packet
     Running pay;        // transport payload bytes per packet (zeros included)
     Running iat;        // gap to previous packet in this direction, seconds

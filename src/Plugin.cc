@@ -104,7 +104,6 @@ public:
         d.bytes += total;
         d.payload += payload;
         d.header += l4hdr;
-        d.iphdr += hdr;
         d.len.Add(total);
         d.pay.Add(payload);
         if ( payload > 0 ) d.data_pkts++;
@@ -144,7 +143,6 @@ public:
             cnt(d.psh); cnt(d.urg); cnt(d.fin); cnt(d.syn); cnt(d.rst); cnt(d.ack); cnt(d.cwr); cnt(d.ece);
             cnt(d.data_pkts); cnt(d.min_seg); cnt(d.init_win);
             cnt(d.bulk_states); cnt(d.bulk_pkts); cnt(d.bulk_bytes); dbl(d.bulk_dur);
-            dbl(d.pkts ? double(d.bytes - d.iphdr) / d.pkts : 0.0);
         }
         dbl(f.len.min); dbl(f.len.max); dbl(f.len.mean); dbl(f.len.Std()); dbl(f.len.Var());
         cnt(f.subflows);

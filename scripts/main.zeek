@@ -14,9 +14,8 @@ export {
 	## bytes - payload - header). *_payload is the
 	## transport payload from the IP layer, not from sequence numbers. Times and
 	## IATs are seconds; start is the first packet of the connection.
-	## Standard deviations are sample (n-1) as in CIC. *_seg_avg is bytes without IP
-	## headers per packet (CIC's segment size average). The last active period is
-	## included in active_*, unlike CIC, which drops it. Truncated packets count with their on-wire length. orig/resp are Zeek's
+	## Standard deviations are sample (n-1) as in CIC. The last active period is
+	## included in active_*. Truncated packets count with their on-wire length. orig/resp are Zeek's
 	## connection roles. Bulk: CIC's rule (4+ payload packets within 1 s, uninterrupted
 	## by payload from the other side). subflows = 1 + gaps over 1 s.
 	## orig/resp follow Zeek's connection roles, not the first packet seen.
@@ -55,7 +54,6 @@ export {
 		orig_bulk_pkts: count &log;
 		orig_bulk_bytes: count &log;
 		orig_bulk_dur: double &log;
-		orig_seg_avg: double &log;
 		resp_pkts: count &log;
 		resp_bytes: count &log;
 		resp_payload: count &log;
@@ -88,7 +86,6 @@ export {
 		resp_bulk_pkts: count &log;
 		resp_bulk_bytes: count &log;
 		resp_bulk_dur: double &log;
-		resp_seg_avg: double &log;
 		len_min: double &log;
 		len_max: double &log;
 		len_mean: double &log;
