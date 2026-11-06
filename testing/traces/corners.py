@@ -40,3 +40,23 @@ with open(os.path.join(out, "trunc.pcap"), "wb") as fh:
     fh.write(struct.pack("<IHHiIII", 0xa1b2c3d4, 2, 4, 0, 0, 65535, 1))
     for r in sorted(recs, key=lambda r: struct.unpack("<II", r[:8])):
         fh.write(r)
+
+# --- knobs.pcap: out-of-order UDP (abs_gap, min header), two TCP bulk periods, IPv4 ICMP echo and unreachable
+from scapy.all import UDP
+k = []
+def kadd(pk, t):
+    pk.time = t; k.append(pk)
+for tt_, n in ((0.0, 1), (0.010, 2), (0.005, 3)):   # third packet is older than the second
+    kadd(Ether()/IP(src="10.4.1.1", dst="10.4.1.2")/UDP(sport=50000, dport=5000)/Raw(b"u" * (10 * n)), t0 + tt_)
+cc, ss = "10.4.2.1", "10.4.2.2"
+tb = t0 + 1.0
+def tc(src, dst, sp, dp, fl, data=b""):
+    global tb
+    kadd(Ether()/IP(src=src, dst=dst)/TCP(sport=sp, dport=dp, flags=fl, seq=1, ack=1)/Raw(data), tb); tb += 0.01
+tc(cc, ss, 41004, 80, "S"); tc(ss, cc, 80, 41004, "SA"); tc(cc, ss, 41004, 80, "A")
+for _ in range(5): tc(cc, ss, 41004, 80, "PA", b"q" * 100)      # period 1: 5 packets
+tc(ss, cc, 80, 41004, "PA", b"r" * 50)                          # other side ends the run
+for _ in range(4): tc(cc, ss, 41004, 80, "PA", b"q" * 100)      # period 2: 4 packets
+kadd(Ether()/IP(src="10.4.3.1", dst="10.4.3.2")/ICMP(type=8, id=1, seq=1)/Raw(b"abcd"), t0 + 3)
+kadd(Ether()/IP(src="10.4.4.2", dst="10.4.4.1")/ICMP(type=3, code=1)/Raw(b"abcd"), t0 + 3.1)
+wrpcap(os.path.join(out, "knobs.pcap"), k)

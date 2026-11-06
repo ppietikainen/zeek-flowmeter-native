@@ -29,7 +29,7 @@ static uint64_t bulk_min_packets = 4;
 
 // Resolved knobs (script record FlowMeter::settings), loaded when the first connection starts.
 static struct {
-    bool abs_gap = false, icmp_header_as_payload = false, min_header_all_protocols = false;
+    bool abs_gap = false, icmp_header_as_payload = false, icmp_echo_as_payload = false, min_header_all_protocols = false;
     bool time_microseconds = false, bulk_per_period_avg = false;
     bool loaded = false;
 } cfg;
@@ -79,8 +79,15 @@ public:
         }
         else if ( ip->NextProto() == IPPROTO_UDP )
             l4hdr = 8;
-        else if ( (ip->NextProto() == IPPROTO_ICMP || ip->NextProto() == IPPROTO_ICMPV6) && ! cfg.icmp_header_as_payload )
-            l4hdr = 8;
+        else if ( ip->NextProto() == IPPROTO_ICMP || ip->NextProto() == IPPROTO_ICMPV6 ) {
+            l4hdr = cfg.icmp_header_as_payload ? 0 : 8;
+            // IPv4 echo request/reply: the 8 bytes count as payload (zeek-flowmeter profile)
+            if ( cfg.icmp_echo_as_payload && ip->NextProto() == IPPROTO_ICMP && l4 >= 1 && cap_ip >= hdr + 1 ) {
+                uint8_t type = ip->Payload()[0];
+                if ( type == 0 || type == 8 )
+                    l4hdr = 0;
+            }
+        }
         uint32_t payload = l4 > l4hdr ? l4 - l4hdr : 0;
 
         if ( f.first < 0 ) {
@@ -171,6 +178,10 @@ public:
         auto ival = [&](double v) { if ( i < nf ) r->Assign(i, zeek::make_intrusive<zeek::IntervalVal>(v)); i++; };
         // Seconds as Zeek computes them from the timeval, so start equals conn.log's ts.
         r->Assign(i++, zeek::make_intrusive<zeek::TimeVal>(double(f.first / 1000000) + double(f.first % 1000000) / 1e6));
+        // duration is Zeek's own (conn.log's), unset where Zeek writes none; span is the first
+        // to last packet as this plugin saw them, signed with out of order timestamps.
+        double zd = conn->LastTime() - conn->StartTime();
+        if ( zd > 0 ) ival(zd); else i++;   // conn.log writes it only when positive
         ival(double(f.last - f.first) / 1e6);
         const double sc = cfg.time_microseconds ? 1.0 : 1e-6;   // internal times are microseconds
         auto rs = [&](const Running& x) { dbl(x.sum * sc); dbl(x.min * sc); dbl(x.max * sc); dbl(x.mean * sc); dbl(x.Std() * sc); };
@@ -315,6 +326,7 @@ void Plugin::HookSetupAnalyzerTree(zeek::Connection* conn) {
             auto get = [&](const char* n) { int k = rv->GetType<zeek::RecordType>()->FieldOffset(n); return k >= 0 && rv->GetFieldAs<zeek::BoolVal>(k); };
             cfg.abs_gap = get("abs_gap");
             cfg.icmp_header_as_payload = get("icmp_header_as_payload");
+            cfg.icmp_echo_as_payload = get("icmp_echo_as_payload");
             cfg.min_header_all_protocols = get("min_header_all_protocols");
             cfg.time_microseconds = get("time_microseconds");
             cfg.bulk_per_period_avg = get("bulk_per_period_avg");

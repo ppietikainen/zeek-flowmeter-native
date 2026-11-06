@@ -28,7 +28,7 @@ def check(ok, msg):
         fails += 1
         print("FAIL", msg)
 
-for trace in ("flowdef.pcap", "flowdef-b.pcap", "exthdr.pcap", "other.pcap", "flip.pcap", "flip2.pcap", "trunc.pcap"):
+for trace in ("flowdef.pcap", "flowdef-b.pcap", "exthdr.pcap", "other.pcap", "flip.pcap", "flip2.pcap", "trunc.pcap", "knobs.pcap"):
     conn, fm = run(trace)
     c = {r["uid"]: r for r in conn}
     check(len(fm) == len(conn), f"{trace}: {len(fm)} flowmeter rows vs {len(conn)} conn rows")
@@ -42,6 +42,7 @@ for trace in ("flowdef.pcap", "flowdef-b.pcap", "exthdr.pcap", "other.pcap", "fl
                   f"{trace} {r['uid']} {side}_pkts {r[f'fm.{side}_pkts']} - {sub} != {k[f'{side}_pkts']}")
             if not sub and not r[f"fm.{side}_truncated"]:
                 check(r[f"fm.{side}_bytes"] == k[f"{side}_ip_bytes"], f"{trace} {r['uid']} {side}_bytes")
+        check(r.get("fm.duration") == k.get("duration"), f"{trace} {r['uid']} duration {r.get('fm.duration')} != conn.log {k.get('duration')}")
         check(abs(r["ts"] - k["ts"]) < 1e-6, f"{trace} {r['uid']} ts {r['ts']} != {k['ts']}")
         if trace == "trunc.pcap":
             check((r["fm.orig_truncated"], r["fm.resp_truncated"]) == ((3, 3) if icmp else (1, 1)), f"{trace} truncated counts")
@@ -76,12 +77,35 @@ check(all(isinstance(r["fm.orig_bulk_pkts"], int) and isinstance(r["fm.orig_bulk
 for u in b:
     for key in ("iat_total", "orig_iat_max"):
         check(abs(z[u]["fm." + key] - b[u]["fm." + key] * 1e6) < 1e-3 * max(1, z[u]["fm." + key]), f"profile {key} not in microseconds")
-    check(b[u]["fm.duration"] == z[u]["fm.duration"], "profile must not change duration units")
+    check(b[u].get("fm.duration") == z[u].get("fm.duration"), "profile must not change duration units")
 _, c0 = run("other.pcap")
 _, c1 = run("other.pcap", extra=("FlowMeter::icmp_header_as_payload=T",))
 i0 = [r for r in c0 if r["fm.orig_header"] == 8]
 i1 = [r for r in c1 if r["fm.orig_header"] == 0 and r["fm.orig_payload"] == 12]
 check(len(i0) == 1 and len(i1) == 1, f"icmp knob: {len(i0)} default rows with header 8, {len(i1)} knob rows with payload 12")
+
+# Knobs on knobs.pcap: out-of-order UDP, two TCP bulk periods, IPv4 echo and unreachable
+bykind = lambda rows, c: {(k["proto"], k["id.orig_h"]): r for r, k in rows}
+def knob_rows(extra=()):
+    c, f = run("knobs.pcap", extra=extra)
+    cm = {r["uid"]: r for r in c}
+    out = {}
+    for r in f:
+        k = cm[r["uid"]]
+        out[(k["proto"], k["id.orig_h"])] = r
+    return out
+kd, kz = knob_rows(), knob_rows(("FlowMeter::profile=zeek-flowmeter",))
+u, uz = kd[("udp", "10.4.1.1")], kz[("udp", "10.4.1.1")]
+check(u["fm.iat_min"] < 0 and abs(uz["fm.iat_min"] - abs(u["fm.iat_min"]) * 1e6) < 1e-3, "abs_gap: negative gap not made absolute")
+check(u["fm.orig_min_seg"] == 0 and uz["fm.orig_min_seg"] == 8, f"min_header_all_protocols: {u['fm.orig_min_seg']} / {uz['fm.orig_min_seg']}")
+tb, tz = kd[("tcp", "10.4.2.1")], kz[("tcp", "10.4.2.1")]
+check(tb["fm.orig_bulk_periods"] == 2 and tb["fm.orig_bulk_pkts"] == 9, "bulk: expected 2 periods, 9 packets")
+check(abs(tz["fm.orig_bulk_pkts_avg"] - 9 / 2) < 1e-9 and abs(tz["fm.orig_bulk_bytes_avg"] - 900 / 2) < 1e-9, "bulk averages are not total/periods")
+e, ez = kd[("icmp", "10.4.3.1")], kz[("icmp", "10.4.3.1")]
+x, xz = kd[("icmp", "10.4.4.2")], kz[("icmp", "10.4.4.2")]
+check((e["fm.orig_header"], e["fm.orig_payload"]) == (8, 4), "icmp echo default must be header")
+check((ez["fm.orig_header"], ez["fm.orig_payload"]) == (0, 12), "profile: echo 8 bytes must be payload")
+check((xz["fm.orig_header"], xz["fm.orig_payload"]) == (8, 4), "profile: unreachable must stay header")
 
 print("FAILED" if fails else "ok", fails)
 sys.exit(1 if fails else 0)

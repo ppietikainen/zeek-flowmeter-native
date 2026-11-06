@@ -18,11 +18,13 @@ export {
 	const bulk_min_packets = 4 &redef;
 
 	## Knobs for definitions where extractors differ. All default to F (the plugin's
-	## documented behavior); profile "zeek-flowmeter" sets them all to what that script does.
+	## documented behavior); profile "zeek-flowmeter" sets them to what that script does.
 	## Gaps from out-of-order input: signed (F) or absolute (T).
 	const abs_gap = F &redef;
 	## ICMP's 8 header bytes: header (F) or payload (T).
 	const icmp_header_as_payload = F &redef;
+	## IPv4 echo request/reply only: the 8 bytes count as payload (T), other ICMP stays header.
+	const icmp_echo_as_payload = F &redef;
 	## Minimum header size: TCP only (F) or over every protocol that has a header (T).
 	const min_header_all_protocols = F &redef;
 	## IAT, active, idle and bulk times: seconds (F) or microseconds (T). Durations stay seconds.
@@ -36,6 +38,7 @@ export {
 	type Settings: record {
 		abs_gap: bool;
 		icmp_header_as_payload: bool;
+		icmp_echo_as_payload: bool;
 		min_header_all_protocols: bool;
 		time_microseconds: bool;
 		bulk_per_period_avg: bool;
@@ -47,7 +50,9 @@ export {
 	## Semantics. Lengths are IP-layer (the IP total length, so header + payload).
 	## *_header is the transport header only, as in CIC (IP header bytes are
 	## bytes - payload - header). *_payload is the
-	## transport payload from the IP layer, not from sequence numbers. Times and
+	## transport payload from the IP layer, not from sequence numbers. duration is Zeek's own (conn.log's), unset where Zeek writes none;
+	## span is first to last packet as seen here (signed with out of order timestamps).
+	## Times and
 	## IATs are seconds unless time_microseconds; start is the first packet of the connection.
 	## Standard deviations are sample (n-1) as in CIC. The last active period is
 	## included in active_*. *_skipped counts packets Zeek did not analyze (bad checksum, bad header);
@@ -60,7 +65,8 @@ export {
 	## orig/resp follow Zeek's final connection roles (decided at the end, not by arrival).
 	type Stats: record {
 		start: time &log;
-		duration: interval &log;
+		duration: interval &optional &log;
+		span: interval &log;
 		orig_pkts: count &log;
 		orig_bytes: count &log;
 		orig_payload: count &log;
@@ -182,6 +188,7 @@ event zeek_init() &priority=10
 	local z = profile == "zeek-flowmeter";
 	settings = Settings($abs_gap = abs_gap || z,
 	                    $icmp_header_as_payload = icmp_header_as_payload,
+	                    $icmp_echo_as_payload = icmp_echo_as_payload || z,
 	                    $min_header_all_protocols = min_header_all_protocols || z,
 	                    $time_microseconds = time_microseconds || z,
 	                    $bulk_per_period_avg = bulk_per_period_avg || z);
@@ -205,6 +212,7 @@ event zeek_init() &priority=-5
 		["profile"] = profile,
 		["abs_gap"] = fmt("%s", settings$abs_gap),
 		["icmp_header_as_payload"] = fmt("%s", settings$icmp_header_as_payload),
+		["icmp_echo_as_payload"] = fmt("%s", settings$icmp_echo_as_payload),
 		["min_header_all_protocols"] = fmt("%s", settings$min_header_all_protocols),
 		["time_microseconds"] = fmt("%s", settings$time_microseconds),
 		["bulk_per_period_avg"] = fmt("%s", settings$bulk_per_period_avg),
