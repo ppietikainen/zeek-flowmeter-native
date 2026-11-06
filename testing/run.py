@@ -116,6 +116,8 @@ oc, of = run("other.pcap")
 ocm = {r["uid"]: r for r in oc}
 sctp = [r for r in of if ocm[r["uid"]]["ip_proto"] == 132 and r["fm.orig_pkts"] == 5][0]
 check((sctp["fm.orig_bulk_periods"], sctp["fm.orig_bulk_pkts"]) == (1, 5), "bulk applies to SCTP (unknown transport)")
+en = kd[("tcp", "10.4.6.1")]
+check((en["fm.orig_cwr"], en["fm.resp_cwr"], en["fm.orig_ece"], en["fm.resp_ece"]) == (1, 0, 1, 1), f"ECN handshake flags: {[en['fm.'+k] for k in ('orig_cwr','resp_cwr','orig_ece','resp_ece')]}")
 check((xz["fm.orig_header"], xz["fm.orig_payload"]) == (8, 4), "profile: unreachable must stay header")
 
 print("FAILED" if fails else "ok", fails)

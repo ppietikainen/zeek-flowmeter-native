@@ -61,4 +61,7 @@ kadd(Ether()/IP(src="10.4.3.1", dst="10.4.3.2")/ICMP(type=8, id=1, seq=1)/Raw(b"
 kadd(Ether()/IP(src="10.4.4.2", dst="10.4.4.1")/ICMP(type=3, code=1)/Raw(b"abcd"), t0 + 3.1)
 for i in range(6):   # an echo train: payload packets in a row, but not bulk (not a stream protocol)
     kadd(Ether()/IP(src="10.4.5.1", dst="10.4.5.2")/ICMP(type=8, id=2, seq=i)/Raw(b"abcd"), t0 + 4 + i * 0.01)
+# ECN handshake: SYN carries ECE+CWR ([SEW]), SYN-ACK carries ECE only ([S.E]): CWR 1, ECE 2 in total
+kadd(Ether()/IP(src="10.4.6.1", dst="10.4.6.2")/TCP(sport=41006, dport=80, flags="SEC", seq=1), t0 + 5)
+kadd(Ether()/IP(src="10.4.6.2", dst="10.4.6.1")/TCP(sport=80, dport=41006, flags="SAE", seq=1, ack=2), t0 + 5.01)
 wrpcap(os.path.join(out, "knobs.pcap"), k)
