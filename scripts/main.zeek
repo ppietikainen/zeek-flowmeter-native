@@ -17,11 +17,37 @@ export {
 	## Payload packets in a row needed to count as a bulk transfer.
 	const bulk_min_packets = 4 &redef;
 
+	## Knobs for definitions where extractors differ. All default to F (the plugin's
+	## documented behavior); profile "zeek-flowmeter" sets them all to what that script does.
+	## Gaps from out-of-order input: signed (F) or absolute (T).
+	const abs_gap = F &redef;
+	## ICMP's 8 header bytes: header (F) or payload (T).
+	const icmp_header_as_payload = F &redef;
+	## Minimum header size: TCP only (F) or over every protocol that has a header (T).
+	const min_header_all_protocols = F &redef;
+	## IAT, active, idle and bulk times: seconds (F) or microseconds (T). Durations stay seconds.
+	const time_microseconds = F &redef;
+	## Bulk statistics: totals per direction (F) or averages per bulk period (T).
+	const bulk_per_period_avg = F &redef;
+	## "default" or "zeek-flowmeter".
+	const profile = "default" &redef;
+
+	type Settings: record {
+		abs_gap: bool;
+		icmp_header_as_payload: bool;
+		min_header_all_protocols: bool;
+		time_microseconds: bool;
+		bulk_per_period_avg: bool;
+	};
+
+	## The effective knobs (explicit settings or'ed with the profile), read by the plugin.
+	global settings: Settings;
+
 	## Semantics. Lengths are IP-layer (the IP total length, so header + payload).
 	## *_header is the transport header only, as in CIC (IP header bytes are
 	## bytes - payload - header). *_payload is the
 	## transport payload from the IP layer, not from sequence numbers. Times and
-	## IATs are seconds; start is the first packet of the connection.
+	## IATs are seconds unless time_microseconds; start is the first packet of the connection.
 	## Standard deviations are sample (n-1) as in CIC. The last active period is
 	## included in active_*. *_skipped counts packets Zeek did not analyze (bad checksum, bad header);
 	## they are still included in every other statistic, so conn.log's packet counts equal
@@ -63,8 +89,8 @@ export {
 		orig_min_seg: count &log;
 		orig_init_win: count &log;
 		orig_bulk_states: count &log;
-		orig_bulk_pkts: count &log;
-		orig_bulk_bytes: count &log;
+		orig_bulk_pkts: double &log;
+		orig_bulk_bytes: double &log;
 		orig_bulk_dur: double &log;
 		orig_skipped: count &log;
 		orig_skip_badsum: count &log;
@@ -98,8 +124,8 @@ export {
 		resp_min_seg: count &log;
 		resp_init_win: count &log;
 		resp_bulk_states: count &log;
-		resp_bulk_pkts: count &log;
-		resp_bulk_bytes: count &log;
+		resp_bulk_pkts: double &log;
+		resp_bulk_bytes: double &log;
 		resp_bulk_dur: double &log;
 		resp_skipped: count &log;
 		resp_skip_badsum: count &log;
@@ -144,6 +170,18 @@ export {
 	global log_flowmeter: event(rec: Info);
 }
 
+event zeek_init() &priority=10
+	{
+	if ( profile != "default" && profile != "zeek-flowmeter" )
+		Reporter::error(fmt("FlowMeter::profile must be \"default\" or \"zeek-flowmeter\", not \"%s\"", profile));
+	local z = profile == "zeek-flowmeter";
+	settings = Settings($abs_gap = abs_gap || z,
+	                    $icmp_header_as_payload = icmp_header_as_payload,
+	                    $min_header_all_protocols = min_header_all_protocols || z,
+	                    $time_microseconds = time_microseconds || z,
+	                    $bulk_per_period_avg = bulk_per_period_avg || z);
+	}
+
 event zeek_init() &priority=5
 	{
 	Log::create_stream(LOG, [$columns=Info, $ev=log_flowmeter, $path="flowmeter"]);
@@ -159,6 +197,12 @@ event zeek_init() &priority=-5
 		["subflow_gap_s"] = fmt("%f", interval_to_double(subflow_gap)),
 		["bulk_gap_s"] = fmt("%f", interval_to_double(bulk_gap)),
 		["bulk_min_packets"] = fmt("%d", bulk_min_packets),
+		["profile"] = profile,
+		["abs_gap"] = fmt("%s", settings$abs_gap),
+		["icmp_header_as_payload"] = fmt("%s", settings$icmp_header_as_payload),
+		["min_header_all_protocols"] = fmt("%s", settings$min_header_all_protocols),
+		["time_microseconds"] = fmt("%s", settings$time_microseconds),
+		["bulk_per_period_avg"] = fmt("%s", settings$bulk_per_period_avg),
 		["tcp_inactivity_timeout_s"] = fmt("%f", interval_to_double(tcp_inactivity_timeout)),
 		["udp_inactivity_timeout_s"] = fmt("%f", interval_to_double(udp_inactivity_timeout)),
 		["icmp_inactivity_timeout_s"] = fmt("%f", interval_to_double(icmp_inactivity_timeout)),

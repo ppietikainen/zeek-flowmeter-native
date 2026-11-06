@@ -1,6 +1,8 @@
 #include "Plugin.h"
 
 #include <netinet/in.h>
+#include <cmath>
+#include <cstdlib>
 #include <netinet/tcp.h>
 
 #include "FlowStats.h"
@@ -25,6 +27,13 @@ static double subflow_gap = 1.0;       // seconds
 static double bulk_gap = 1.0;          // seconds
 static uint64_t bulk_min_packets = 4;
 
+// Resolved knobs (script record FlowMeter::settings), loaded when the first connection starts.
+static struct {
+    bool abs_gap = false, icmp_header_as_payload = false, min_header_all_protocols = false;
+    bool time_microseconds = false, bulk_per_period_avg = false;
+    bool loaded = false;
+} cfg;
+
 namespace {
 
 class Meter {
@@ -33,7 +42,7 @@ public:
     // Zeek may flip originator and responder after packets were seen, so which endpoint is
     // the originator is decided only in Emit(), from the connection's final roles.
     // cap_ip: IP bytes present in the capture (UINT32_MAX if unknown).
-    void Observe(double t, const zeek::IP_Hdr* ip, uint32_t cap_ip, bool skipped = false, bool badsum = false) {
+    void Observe(int64_t t, const zeek::IP_Hdr* ip, uint32_t cap_ip, bool skipped = false, bool badsum = false) {
         uint32_t total = ip->TotalLen();
         uint8_t proto = ip->NextProto();
         uint16_t sport = 0;
@@ -70,7 +79,7 @@ public:
         }
         else if ( ip->NextProto() == IPPROTO_UDP )
             l4hdr = 8;
-        else if ( ip->NextProto() == IPPROTO_ICMP || ip->NextProto() == IPPROTO_ICMPV6 )
+        else if ( (ip->NextProto() == IPPROTO_ICMP || ip->NextProto() == IPPROTO_ICMPV6) && ! cfg.icmp_header_as_payload )
             l4hdr = 8;
         uint32_t payload = l4 > l4hdr ? l4 - l4hdr : 0;
 
@@ -79,12 +88,15 @@ public:
             f.active_start = t;
         }
         else {
-            double gap = t - f.last;
+            // Out of order input gives negative gaps; the default keeps them, the zeek-flowmeter
+            // profile takes the absolute value.
+            int64_t g = t - f.last;
+            double gap = cfg.abs_gap ? std::llabs(g) : g;
             f.flow_iat.Add(gap);
-            if ( gap > subflow_gap )
+            if ( gap > subflow_gap * 1e6 )
                 f.subflows++;
-            if ( gap > activity_timeout ) {
-                f.active.Add(f.last - f.active_start);
+            if ( gap > activity_timeout * 1e6 ) {
+                f.active.Add(double(f.last - f.active_start));
                 f.idle.Add(gap);
                 f.active_start = t;
             }
@@ -96,7 +108,7 @@ public:
             Dir& o = f.d[1 - idx];
             // The other side sending payload ends our candidate run.
             o.bulk_cnt_h = 0;
-            if ( d.bulk_cnt_h == 0 || t - d.bulk_last > bulk_gap ) {
+            if ( d.bulk_cnt_h == 0 || t - d.bulk_last > bulk_gap * 1e6 ) {
                 d.bulk_start = t;
                 d.bulk_cnt_h = 1;
                 d.bulk_size_h = payload;
@@ -108,19 +120,21 @@ public:
                     d.bulk_states++;
                     d.bulk_pkts += bulk_min_packets;
                     d.bulk_bytes += d.bulk_size_h;
-                    d.bulk_dur += t - d.bulk_start;
+                    d.bulk_dur += double(t - d.bulk_start);
                 }
                 else if ( d.bulk_cnt_h > bulk_min_packets ) {
                     d.bulk_pkts++;
                     d.bulk_bytes += payload;
-                    d.bulk_dur += t - d.bulk_last;
+                    d.bulk_dur += double(t - d.bulk_last);
                 }
             }
             d.bulk_last = t;
         }
 
-        if ( d.last >= 0 )
-            d.iat.Add(t - d.last);
+        if ( d.last >= 0 ) {
+            int64_t g = t - d.last;
+            d.iat.Add(cfg.abs_gap ? double(std::llabs(g)) : double(g));
+        }
         d.last = t;
         d.pkts++;
         d.bytes += total;
@@ -129,8 +143,9 @@ public:
         d.len.Add(total);
         d.pay.Add(payload);
         if ( payload > 0 ) d.data_pkts++;
-        if ( l4hdr && ip->NextProto() == IPPROTO_TCP ) {
+        if ( l4hdr && (ip->NextProto() == IPPROTO_TCP || cfg.min_header_all_protocols) )
             if ( d.min_seg == 0 || l4hdr < d.min_seg ) d.min_seg = l4hdr;
+        if ( l4hdr && ip->NextProto() == IPPROTO_TCP ) {
             if ( ! d.have_win ) { d.have_win = true; d.init_win = win; }
             if ( flags & TH_FIN ) d.fin++;
             if ( flags & TH_SYN ) d.syn++;
@@ -147,15 +162,18 @@ public:
         if ( ! flow_done || ! stats_type || f.first < 0 )
             return;
         if ( f.active_start >= 0 )
-            f.active.Add(f.last - f.active_start);
+            f.active.Add(double(f.last - f.active_start));
         auto r = zeek::make_intrusive<zeek::RecordVal>(stats_type);
         int i = 0;
         const int nf = stats_type->NumFields();
         auto cnt = [&](uint64_t v) { if ( i < nf ) r->Assign(i, zeek::val_mgr->Count(v)); i++; };
         auto dbl = [&](double v) { if ( i < nf ) r->Assign(i, zeek::make_intrusive<zeek::DoubleVal>(v)); i++; };
         auto ival = [&](double v) { if ( i < nf ) r->Assign(i, zeek::make_intrusive<zeek::IntervalVal>(v)); i++; };
-        r->Assign(i++, zeek::make_intrusive<zeek::TimeVal>(f.first));
-        ival(f.last - f.first);
+        // Seconds as Zeek computes them from the timeval, so start equals conn.log's ts.
+        r->Assign(i++, zeek::make_intrusive<zeek::TimeVal>(double(f.first / 1000000) + double(f.first % 1000000) / 1e6));
+        ival(double(f.last - f.first) / 1e6);
+        const double sc = cfg.time_microseconds ? 1.0 : 1e-6;   // internal times are microseconds
+        auto rs = [&](const Running& x) { dbl(x.sum * sc); dbl(x.min * sc); dbl(x.max * sc); dbl(x.mean * sc); dbl(x.Std() * sc); };
         // The originator is the endpoint matching the connection's final originator.
         // ICMP and other protocols carry no ports (Zeek uses type/code), so only the address counts.
         auto is_orig_ep = [&](int e) {
@@ -168,17 +186,20 @@ public:
             cnt(d.pkts); cnt(d.bytes); cnt(d.payload); cnt(d.header);
             dbl(d.len.min); dbl(d.len.max); dbl(d.len.mean); dbl(d.len.Std());
             dbl(d.pay.min); dbl(d.pay.max); dbl(d.pay.mean); dbl(d.pay.Std());
-            dbl(d.iat.sum); dbl(d.iat.min); dbl(d.iat.max); dbl(d.iat.mean); dbl(d.iat.Std());
+            rs(d.iat);
             cnt(d.psh); cnt(d.urg); cnt(d.fin); cnt(d.syn); cnt(d.rst); cnt(d.ack); cnt(d.cwr); cnt(d.ece);
             cnt(d.data_pkts); cnt(d.min_seg); cnt(d.init_win);
-            cnt(d.bulk_states); cnt(d.bulk_pkts); cnt(d.bulk_bytes); dbl(d.bulk_dur);
+            cnt(d.bulk_states);
+            // totals, or averages per bulk period (zeek-flowmeter)
+            const double per = cfg.bulk_per_period_avg ? (d.bulk_states ? 1.0 / d.bulk_states : 0.0) : 1.0;
+            dbl(d.bulk_pkts * per); dbl(d.bulk_bytes * per); dbl(d.bulk_dur * per * sc);
             cnt(d.skipped); cnt(d.skip_badsum); cnt(d.truncated);
         }
         dbl(f.len.min); dbl(f.len.max); dbl(f.len.mean); dbl(f.len.Std()); dbl(f.len.Var());
         cnt(f.subflows);
-        dbl(f.flow_iat.sum); dbl(f.flow_iat.min); dbl(f.flow_iat.max); dbl(f.flow_iat.mean); dbl(f.flow_iat.Std());
-        cnt(f.active.n); dbl(f.active.min); dbl(f.active.max); dbl(f.active.mean); dbl(f.active.Std());
-        cnt(f.idle.n); dbl(f.idle.min); dbl(f.idle.max); dbl(f.idle.mean); dbl(f.idle.Std());
+        rs(f.flow_iat);
+        cnt(f.active.n); dbl(f.active.min * sc); dbl(f.active.max * sc); dbl(f.active.mean * sc); dbl(f.active.Std() * sc);
+        cnt(f.idle.n); dbl(f.idle.min * sc); dbl(f.idle.max * sc); dbl(f.idle.mean * sc); dbl(f.idle.Std() * sc);
 
         if ( i != stats_type->NumFields() ) {
             zeek::reporter->InternalWarning("FlowMeter: %d values for %d fields", i, stats_type->NumFields());
@@ -211,7 +232,7 @@ public:
             const u_char* end = pkt.data + pkt.cap_len;
             if ( pkt.data && start >= pkt.data && start <= end )
                 cap_ip = end - start;
-            m.Observe(pkt.time, pkt.ip_hdr.get(), cap_ip, action == zeek::packet_analysis::PacketAction::Skip,
+            m.Observe(int64_t(pkt.ts.tv_sec) * 1000000 + pkt.ts.tv_usec, pkt.ip_hdr.get(), cap_ip, action == zeek::packet_analysis::PacketAction::Skip,
                       reason == zeek::packet_analysis::SkipReason::BadChecksum);
         }
     }
@@ -237,7 +258,7 @@ public:
 protected:
     void DeliverPacket(int, const u_char*, bool is_orig, uint64_t, const zeek::IP_Hdr* ip, int) override {
         if ( ip )
-            m.Observe(zeek::run_state::network_time, ip, UINT32_MAX);
+            m.Observe(std::llround(zeek::run_state::network_time * 1e6), ip, UINT32_MAX);
     }
 
 private:
@@ -281,6 +302,19 @@ void Plugin::InitPostScript() {
 void Plugin::HookSetupAnalyzerTree(zeek::Connection* conn) {
     if ( ! stats_type )
         return;
+    if ( ! cfg.loaded ) {
+        cfg.loaded = true;
+        auto id = zeek::detail::global_scope()->Find("FlowMeter::settings");
+        if ( id && id->GetVal() ) {
+            auto rv = id->GetVal()->AsRecordVal();
+            auto get = [&](const char* n) { int k = rv->GetType<zeek::RecordType>()->FieldOffset(n); return k >= 0 && rv->GetFieldAs<zeek::BoolVal>(k); };
+            cfg.abs_gap = get("abs_gap");
+            cfg.icmp_header_as_payload = get("icmp_header_as_payload");
+            cfg.min_header_all_protocols = get("min_header_all_protocols");
+            cfg.time_microseconds = get("time_microseconds");
+            cfg.bulk_per_period_avg = get("bulk_per_period_avg");
+        }
+    }
     if ( auto* a = conn->GetSessionAdapter() ) {
         if ( strcmp(a->GetAnalyzerName(), "UNKNOWN_IP_TRANSPORT") == 0 )
             a->AddChildAnalyzer(new Child(conn));

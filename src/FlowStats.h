@@ -32,8 +32,8 @@ struct Dir {
     uint64_t pkts = 0, bytes = 0, payload = 0, header = 0;
     Running len;        // IP total length per packet
     Running pay;        // transport payload bytes per packet (zeros included)
-    Running iat;        // gap to previous packet in this direction, seconds
-    double last = -1;
+    Running iat;        // gap to previous packet in this direction, microseconds
+    int64_t last = -1;           // microseconds
     uint64_t psh = 0, urg = 0, fin = 0, syn = 0, rst = 0, ack = 0, cwr = 0, ece = 0;
     uint64_t skipped = 0, skip_badsum = 0, truncated = 0;  // packets Zeek did not analyze (still counted above)
     uint64_t data_pkts = 0;      // packets with L4 payload > 0
@@ -42,7 +42,7 @@ struct Dir {
     uint32_t init_win = 0;       // window of the first packet in this direction
     // Bulk transfer (CIC rules): >= 4 payload packets, each within 1 s of the
     // previous one, with no payload packet from the other side in between.
-    double bulk_start = 0, bulk_last = 0;
+    int64_t bulk_start = 0, bulk_last = 0;      // microseconds
     uint64_t bulk_cnt_h = 0, bulk_size_h = 0;       // current candidate run
     uint64_t bulk_states = 0, bulk_pkts = 0, bulk_bytes = 0;
     double bulk_dur = 0;
@@ -50,11 +50,11 @@ struct Dir {
 
 struct Flow {
     Dir d[2];                    // 0 = orig, 1 = resp
-    double first = -1, last = -1;
+    int64_t first = -1, last = -1;              // packet times, microseconds
     Running flow_iat;
     // Active/idle: a gap above the activity timeout ends an active period.
     Running active, idle;
-    double active_start = -1;
+    int64_t active_start = -1;
     Running len;                 // IP total length, both directions
     uint64_t subflows = 1;       // 1 + gaps above the subflow threshold (1 s)
 };

@@ -56,5 +56,28 @@ for side in ("orig", "resp"):
     check(r[f"fm.{side}_pkts"] - r[f"fm.{side}_skipped"] == k[f"{side}_pkts"], f"badsum {side} pkts-skipped")
     check(r[f"fm.{side}_skip_badsum"] == 1, f"badsum {side} badsum count {r[f'fm.{side}_skip_badsum']}")
 
+# Times are exact integer microseconds: every gap is a whole number of them.
+conn, fm = run("flowdef.pcap")
+for r in fm:
+    for key in ("iat_total", "iat_min", "iat_max", "orig_iat_min", "resp_iat_max"):
+        v = r["fm." + key] * 1e6
+        check(abs(v - round(v)) < 1e-6, f"flowdef {key} not whole microseconds: {v}")
+
+# Profile and knobs, recorded in flowmeter_config.log
+_, base = run("flowdef.pcap")
+_, zf = run("flowdef.pcap", extra=("FlowMeter::profile=zeek-flowmeter",))
+keyf = lambda r: (r["fm.start"], r["fm.orig_pkts"], r["fm.resp_pkts"], r["fm.orig_bytes"], r["fm.resp_bytes"])
+b, z = {keyf(r): r for r in base}, {keyf(r): r for r in zf}
+check(set(b) == set(z), "profile run has different connections")
+for u in b:
+    for key in ("iat_total", "orig_iat_max"):
+        check(abs(z[u]["fm." + key] - b[u]["fm." + key] * 1e6) < 1e-3 * max(1, z[u]["fm." + key]), f"profile {key} not in microseconds")
+    check(b[u]["fm.duration"] == z[u]["fm.duration"], "profile must not change duration units")
+_, c0 = run("other.pcap")
+_, c1 = run("other.pcap", extra=("FlowMeter::icmp_header_as_payload=T",))
+i0 = [r for r in c0 if r["fm.orig_header"] == 8]
+i1 = [r for r in c1 if r["fm.orig_header"] == 0 and r["fm.orig_payload"] == 12]
+check(len(i0) == 1 and len(i1) == 1, f"icmp knob: {len(i0)} default rows with header 8, {len(i1)} knob rows with payload 12")
+
 print("FAILED" if fails else "ok", fails)
 sys.exit(1 if fails else 0)
