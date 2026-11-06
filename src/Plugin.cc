@@ -189,10 +189,15 @@ public:
             rs(d.iat);
             cnt(d.psh); cnt(d.urg); cnt(d.fin); cnt(d.syn); cnt(d.rst); cnt(d.ack); cnt(d.cwr); cnt(d.ece);
             cnt(d.data_pkts); cnt(d.min_seg); cnt(d.init_win);
-            cnt(d.bulk_states);
-            // totals, or averages per bulk period (zeek-flowmeter)
-            const double per = cfg.bulk_per_period_avg ? (d.bulk_states ? 1.0 / d.bulk_states : 0.0) : 1.0;
-            dbl(d.bulk_pkts * per); dbl(d.bulk_bytes * per); dbl(d.bulk_dur * per * sc);
+            cnt(d.bulk_states); cnt(d.bulk_pkts); cnt(d.bulk_bytes); dbl(d.bulk_dur * sc);
+            // Averages per bulk period are separate columns, written only when asked for
+            // (zeek-flowmeter profile); no column changes meaning with a setting.
+            if ( cfg.bulk_per_period_avg ) {
+                dbl(d.bulk_states ? double(d.bulk_pkts) / d.bulk_states : 0.0);
+                dbl(d.bulk_states ? double(d.bulk_bytes) / d.bulk_states : 0.0);
+            }
+            else
+                i += 2;
             cnt(d.skipped); cnt(d.skip_badsum); cnt(d.truncated);
         }
         dbl(f.len.min); dbl(f.len.max); dbl(f.len.mean); dbl(f.len.Std()); dbl(f.len.Var());

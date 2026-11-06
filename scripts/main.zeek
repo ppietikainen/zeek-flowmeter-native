@@ -27,7 +27,8 @@ export {
 	const min_header_all_protocols = F &redef;
 	## IAT, active, idle and bulk times: seconds (F) or microseconds (T). Durations stay seconds.
 	const time_microseconds = F &redef;
-	## Bulk statistics: totals per direction (F) or averages per bulk period (T).
+	## Also write *_bulk_pkts_avg and *_bulk_bytes_avg (per bulk period). The totals and
+	## *_bulk_periods are always written; no column changes meaning with a setting.
 	const bulk_per_period_avg = F &redef;
 	## "default" or "zeek-flowmeter".
 	const profile = "default" &redef;
@@ -88,10 +89,12 @@ export {
 		orig_data_pkts: count &log;
 		orig_min_seg: count &log;
 		orig_init_win: count &log;
-		orig_bulk_states: count &log;
-		orig_bulk_pkts: double &log;
-		orig_bulk_bytes: double &log;
+		orig_bulk_periods: count &log;
+		orig_bulk_pkts: count &log;
+		orig_bulk_bytes: count &log;
 		orig_bulk_dur: double &log;
+		orig_bulk_pkts_avg: double &optional &log;
+		orig_bulk_bytes_avg: double &optional &log;
 		orig_skipped: count &log;
 		orig_skip_badsum: count &log;
 		orig_truncated: count &log;
@@ -123,10 +126,12 @@ export {
 		resp_data_pkts: count &log;
 		resp_min_seg: count &log;
 		resp_init_win: count &log;
-		resp_bulk_states: count &log;
-		resp_bulk_pkts: double &log;
-		resp_bulk_bytes: double &log;
+		resp_bulk_periods: count &log;
+		resp_bulk_pkts: count &log;
+		resp_bulk_bytes: count &log;
 		resp_bulk_dur: double &log;
+		resp_bulk_pkts_avg: double &optional &log;
+		resp_bulk_bytes_avg: double &optional &log;
 		resp_skipped: count &log;
 		resp_skip_badsum: count &log;
 		resp_truncated: count &log;

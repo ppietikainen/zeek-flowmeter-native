@@ -66,8 +66,8 @@ select 'active_mean_us', "Active Mean", "fm.active_mean"*1e6 from cmp union all
 select 'active_max_us', "Active Max", "fm.active_max"*1e6 from cmp union all
 select 'idle_mean_us', "Idle Mean", "fm.idle_mean"*1e6 from cmp union all
 select 'idle_max_us', "Idle Max", "fm.idle_max"*1e6 from cmp union all
-select 'fwd_bulk_pkts_avg', fw(same, "Fwd Packet/Bulk Avg","Bwd Packet/Bulk Avg"), case when "fm.orig_bulk_states">0 then "fm.orig_bulk_pkts"/"fm.orig_bulk_states"::double else 0 end from cmp union all
-select 'fwd_bulk_bytes_avg', fw(same, "Fwd Bytes/Bulk Avg","Bwd Bytes/Bulk Avg"), case when "fm.orig_bulk_states">0 then "fm.orig_bulk_bytes"/"fm.orig_bulk_states"::double else 0 end from cmp union all
+select 'fwd_bulk_pkts_avg', fw(same, "Fwd Packet/Bulk Avg","Bwd Packet/Bulk Avg"), case when "fm.orig_bulk_periods">0 then "fm.orig_bulk_pkts"/"fm.orig_bulk_periods"::double else 0 end from cmp union all
+select 'fwd_bulk_bytes_avg', fw(same, "Fwd Bytes/Bulk Avg","Bwd Bytes/Bulk Avg"), case when "fm.orig_bulk_periods">0 then "fm.orig_bulk_bytes"/"fm.orig_bulk_periods"::double else 0 end from cmp union all
 select 'fwd_payload_total', fw(same, "Fwd Segment Payload Length Total","Bwd Segment Payload Length Total"), "fm.orig_payload" from cmp union all
 select 'fwd_payload_max', fw(same, "Fwd Segment Payload Length Max","Bwd Segment Payload Length Max"), "fm.orig_pay_max" from cmp union all
 select 'fwd_payload_min', fw(same, "Fwd Segment Payload Length Min","Bwd Segment Payload Length Min"), "fm.orig_pay_min" from cmp union all

@@ -63,12 +63,16 @@ for r in fm:
         v = r["fm." + key] * 1e6
         check(abs(v - round(v)) < 1e-6, f"flowdef {key} not whole microseconds: {v}")
 
+# Bulk columns never change meaning: counts always, averages only with the setting.
 # Profile and knobs, recorded in flowmeter_config.log
 _, base = run("flowdef.pcap")
 _, zf = run("flowdef.pcap", extra=("FlowMeter::profile=zeek-flowmeter",))
 keyf = lambda r: (r["fm.start"], r["fm.orig_pkts"], r["fm.resp_pkts"], r["fm.orig_bytes"], r["fm.resp_bytes"])
 b, z = {keyf(r): r for r in base}, {keyf(r): r for r in zf}
 check(set(b) == set(z), "profile run has different connections")
+check(all("fm.orig_bulk_pkts_avg" not in r for r in base), "default run writes bulk average columns")
+check(all("fm.orig_bulk_pkts_avg" in r and "fm.resp_bulk_bytes_avg" in r for r in zf), "profile run lacks bulk average columns")
+check(all(isinstance(r["fm.orig_bulk_pkts"], int) and isinstance(r["fm.orig_bulk_periods"], int) for r in base + zf), "bulk totals not counts")
 for u in b:
     for key in ("iat_total", "orig_iat_max"):
         check(abs(z[u]["fm." + key] - b[u]["fm." + key] * 1e6) < 1e-3 * max(1, z[u]["fm." + key]), f"profile {key} not in microseconds")
