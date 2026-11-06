@@ -25,12 +25,12 @@ static zeek::RecordTypePtr stats_type;
 static double activity_timeout = 5.0;  // seconds, CIC's default
 static double subflow_gap = 1.0;       // seconds
 static double bulk_gap = 1.0;          // seconds
-static uint64_t bulk_min_packets = 4;
 
 // Resolved knobs (script record FlowMeter::settings), loaded when the first connection starts.
 static struct {
     bool abs_gap = false, icmp_header_as_payload = false, icmp_echo_as_payload = false, min_header_all_protocols = false;
     bool time_microseconds = false, bulk_per_period_avg = false;
+    uint64_t bulk_min_packets = 4;
     bool loaded = false;
 } cfg;
 
@@ -111,12 +111,12 @@ public:
         f.last = t;
         f.len.Add(total);
 
-        // Bulk transfer is a stream notion: TCP and UDP only, 0 for ICMP and other protocols.
-        if ( payload > 0 && (proto == IPPROTO_TCP || proto == IPPROTO_UDP) ) {
+        // Bulk: every protocol, one definition, from IP payload bytes per direction.
+        if ( payload > 0 ) {
             Dir& o = f.d[1 - idx];
             // The other side sending payload ends our candidate run.
             o.bulk_cnt_h = 0;
-            if ( d.bulk_cnt_h == 0 || t - d.bulk_last > bulk_gap * 1e6 ) {
+            if ( d.bulk_cnt_h == 0 || t - d.bulk_last >= bulk_gap * 1e6 ) {
                 d.bulk_start = t;
                 d.bulk_cnt_h = 1;
                 d.bulk_size_h = payload;
@@ -124,13 +124,13 @@ public:
             else {
                 d.bulk_cnt_h++;
                 d.bulk_size_h += payload;
-                if ( d.bulk_cnt_h == bulk_min_packets ) {
+                if ( d.bulk_cnt_h == cfg.bulk_min_packets ) {
                     d.bulk_states++;
-                    d.bulk_pkts += bulk_min_packets;
+                    d.bulk_pkts += cfg.bulk_min_packets;
                     d.bulk_bytes += d.bulk_size_h;
                     d.bulk_dur += double(t - d.bulk_start);
                 }
-                else if ( d.bulk_cnt_h > bulk_min_packets ) {
+                else if ( d.bulk_cnt_h > cfg.bulk_min_packets ) {
                     d.bulk_pkts++;
                     d.bulk_bytes += payload;
                     d.bulk_dur += double(t - d.bulk_last);
@@ -313,7 +313,6 @@ void Plugin::InitPostScript() {
     if ( auto v = val("FlowMeter::activity_timeout") ) activity_timeout = v->AsInterval();
     if ( auto v = val("FlowMeter::subflow_gap") ) subflow_gap = v->AsInterval();
     if ( auto v = val("FlowMeter::bulk_gap") ) bulk_gap = v->AsInterval();
-    if ( auto v = val("FlowMeter::bulk_min_packets") ) bulk_min_packets = v->AsCount();
 }
 
 void Plugin::HookSetupAnalyzerTree(zeek::Connection* conn) {
@@ -331,6 +330,8 @@ void Plugin::HookSetupAnalyzerTree(zeek::Connection* conn) {
             cfg.min_header_all_protocols = get("min_header_all_protocols");
             cfg.time_microseconds = get("time_microseconds");
             cfg.bulk_per_period_avg = get("bulk_per_period_avg");
+            int k = rv->GetType<zeek::RecordType>()->FieldOffset("bulk_min_packets");
+            if ( k >= 0 ) cfg.bulk_min_packets = rv->GetFieldAs<zeek::CountVal>(k);
         }
     }
     if ( auto* a = conn->GetSessionAdapter() ) {

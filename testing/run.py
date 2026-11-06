@@ -100,12 +100,22 @@ check(u["fm.iat_min"] < 0 and abs(uz["fm.iat_min"] - abs(u["fm.iat_min"]) * 1e6)
 check(u["fm.orig_min_seg"] == 0 and uz["fm.orig_min_seg"] == 8, f"min_header_all_protocols: {u['fm.orig_min_seg']} / {uz['fm.orig_min_seg']}")
 tb, tz = kd[("tcp", "10.4.2.1")], kz[("tcp", "10.4.2.1")]
 check(tb["fm.orig_bulk_periods"] == 2 and tb["fm.orig_bulk_pkts"] == 9, "bulk: expected 2 periods, 9 packets")
-check(abs(tz["fm.orig_bulk_pkts_avg"] - 9 / 2) < 1e-9 and abs(tz["fm.orig_bulk_bytes_avg"] - 900 / 2) < 1e-9, "bulk averages are not total/periods")
+# profile requires 5 packets in a row (zeek-flowmeter): only the 5-packet burst counts, the 4-packet one does not
+check((tz["fm.orig_bulk_periods"], tz["fm.orig_bulk_pkts"]) == (1, 5), f"profile bulk: {tz['fm.orig_bulk_periods']} periods {tz['fm.orig_bulk_pkts']} pkts")
+check(abs(tz["fm.orig_bulk_pkts_avg"] - 5.0) < 1e-9 and abs(tz["fm.orig_bulk_bytes_avg"] - 500.0) < 1e-9, "bulk averages are not total/periods")
+# default (min 4): both bursts, average = total / periods
+_, bq = run("knobs.pcap", extra=("FlowMeter::bulk_per_period_avg=T",))
+tq = [r for r in bq if r["fm.orig_bulk_periods"] == 2][0]
+check(abs(tq["fm.orig_bulk_pkts_avg"] - 9 / 2) < 1e-9 and abs(tq["fm.orig_bulk_bytes_avg"] - 900 / 2) < 1e-9, "bulk averages are not total/periods")
 e, ez = kd[("icmp", "10.4.3.1")], kz[("icmp", "10.4.3.1")]
 x, xz = kd[("icmp", "10.4.4.2")], kz[("icmp", "10.4.4.2")]
 check((e["fm.orig_header"], e["fm.orig_payload"]) == (8, 4), "icmp echo default must be header")
 check((ez["fm.orig_header"], ez["fm.orig_payload"]) == (0, 12), "profile: echo 8 bytes must be payload")
-check(kd[("icmp", "10.4.5.1")]["fm.orig_bulk_periods"] == 0 and kd[("icmp", "10.4.5.1")]["fm.orig_pkts"] == 6, "bulk must be TCP/UDP only")
+check((kd[("icmp", "10.4.5.1")]["fm.orig_bulk_periods"], kd[("icmp", "10.4.5.1")]["fm.orig_bulk_pkts"]) == (1, 6), "bulk applies to ICMP echo trains too")
+oc, of = run("other.pcap")
+ocm = {r["uid"]: r for r in oc}
+sctp = [r for r in of if ocm[r["uid"]]["ip_proto"] == 132 and r["fm.orig_pkts"] == 5][0]
+check((sctp["fm.orig_bulk_periods"], sctp["fm.orig_bulk_pkts"]) == (1, 5), "bulk applies to SCTP (unknown transport)")
 check((xz["fm.orig_header"], xz["fm.orig_payload"]) == (8, 4), "profile: unreachable must stay header")
 
 print("FAILED" if fails else "ok", fails)

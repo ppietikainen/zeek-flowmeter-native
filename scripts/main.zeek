@@ -12,9 +12,9 @@ export {
 	const activity_timeout = 5sec &redef;
 	## A gap above this starts a new subflow.
 	const subflow_gap = 1sec &redef;
-	## Payload packets closer together than this can form a bulk transfer.
+	## Payload packets closer together than this (strictly under) can form a bulk transfer.
 	const bulk_gap = 1sec &redef;
-	## Payload packets in a row needed to count as a bulk transfer.
+	## Payload packets in a row needed to count as a bulk transfer (profile zeek-flowmeter: 5).
 	const bulk_min_packets = 4 &redef;
 
 	## Knobs for definitions where extractors differ. All default to F (the plugin's
@@ -32,7 +32,7 @@ export {
 	## Also write *_bulk_pkts_avg and *_bulk_bytes_avg (per bulk period). The totals and
 	## *_bulk_periods are always written; no column changes meaning with a setting.
 	const bulk_per_period_avg = F &redef;
-	## "default" or "zeek-flowmeter".
+	## "default" or "zeek-flowmeter" (also sets bulk_min_packets to 5).
 	const profile = "default" &redef;
 
 	type Settings: record {
@@ -42,6 +42,7 @@ export {
 		min_header_all_protocols: bool;
 		time_microseconds: bool;
 		bulk_per_period_avg: bool;
+		bulk_min_packets: count;
 	};
 
 	## The effective knobs (explicit settings or'ed with the profile), read by the plugin.
@@ -60,7 +61,7 @@ export {
 	## *_pkts - *_skipped. *_truncated counts packets whose captured length is shorter than the IP length (the
 	## capture's snaplen shows here); they count with their IP length. Zeek ignores truncated ICMP, so
 	## for ICMP conn.log packets = *_pkts - *_skipped - *_truncated. orig/resp are Zeek's
-	## connection roles. Bulk (TCP and UDP only; 0 for ICMP and other protocols): CIC's rule (4+ payload packets within 1 s, uninterrupted
+	## connection roles. Bulk (every protocol, from IP payload bytes): CIC's rule (4+ payload packets within 1 s, uninterrupted
 	## by payload from the other side). subflows = 1 + gaps over 1 s.
 	## orig/resp follow Zeek's final connection roles (decided at the end, not by arrival).
 	type Stats: record {
@@ -191,7 +192,8 @@ event zeek_init() &priority=10
 	                    $icmp_echo_as_payload = icmp_echo_as_payload || z,
 	                    $min_header_all_protocols = min_header_all_protocols || z,
 	                    $time_microseconds = time_microseconds || z,
-	                    $bulk_per_period_avg = bulk_per_period_avg || z);
+	                    $bulk_per_period_avg = bulk_per_period_avg || z,
+	                    $bulk_min_packets = z ? 5 : bulk_min_packets);
 	}
 
 event zeek_init() &priority=5
@@ -208,7 +210,7 @@ event zeek_init() &priority=-5
 		["activity_timeout_s"] = fmt("%f", interval_to_double(activity_timeout)),
 		["subflow_gap_s"] = fmt("%f", interval_to_double(subflow_gap)),
 		["bulk_gap_s"] = fmt("%f", interval_to_double(bulk_gap)),
-		["bulk_min_packets"] = fmt("%d", bulk_min_packets),
+		["bulk_min_packets"] = fmt("%d", settings$bulk_min_packets),
 		["profile"] = profile,
 		["abs_gap"] = fmt("%s", settings$abs_gap),
 		["icmp_header_as_payload"] = fmt("%s", settings$icmp_header_as_payload),
