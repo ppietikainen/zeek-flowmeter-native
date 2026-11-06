@@ -111,7 +111,8 @@ public:
         f.last = t;
         f.len.Add(total);
 
-        if ( payload > 0 ) {
+        // Bulk transfer is a stream notion: TCP and UDP only, 0 for ICMP and other protocols.
+        if ( payload > 0 && (proto == IPPROTO_TCP || proto == IPPROTO_UDP) ) {
             Dir& o = f.d[1 - idx];
             // The other side sending payload ends our candidate run.
             o.bulk_cnt_h = 0;

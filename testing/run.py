@@ -105,6 +105,7 @@ e, ez = kd[("icmp", "10.4.3.1")], kz[("icmp", "10.4.3.1")]
 x, xz = kd[("icmp", "10.4.4.2")], kz[("icmp", "10.4.4.2")]
 check((e["fm.orig_header"], e["fm.orig_payload"]) == (8, 4), "icmp echo default must be header")
 check((ez["fm.orig_header"], ez["fm.orig_payload"]) == (0, 12), "profile: echo 8 bytes must be payload")
+check(kd[("icmp", "10.4.5.1")]["fm.orig_bulk_periods"] == 0 and kd[("icmp", "10.4.5.1")]["fm.orig_pkts"] == 6, "bulk must be TCP/UDP only")
 check((xz["fm.orig_header"], xz["fm.orig_payload"]) == (8, 4), "profile: unreachable must stay header")
 
 print("FAILED" if fails else "ok", fails)

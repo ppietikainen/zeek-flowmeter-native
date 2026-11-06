@@ -59,4 +59,6 @@ tc(ss, cc, 80, 41004, "PA", b"r" * 50)                          # other side end
 for _ in range(4): tc(cc, ss, 41004, 80, "PA", b"q" * 100)      # period 2: 4 packets
 kadd(Ether()/IP(src="10.4.3.1", dst="10.4.3.2")/ICMP(type=8, id=1, seq=1)/Raw(b"abcd"), t0 + 3)
 kadd(Ether()/IP(src="10.4.4.2", dst="10.4.4.1")/ICMP(type=3, code=1)/Raw(b"abcd"), t0 + 3.1)
+for i in range(6):   # an echo train: payload packets in a row, but not bulk (not a stream protocol)
+    kadd(Ether()/IP(src="10.4.5.1", dst="10.4.5.2")/ICMP(type=8, id=2, seq=i)/Raw(b"abcd"), t0 + 4 + i * 0.01)
 wrpcap(os.path.join(out, "knobs.pcap"), k)

@@ -60,7 +60,7 @@ export {
 	## *_pkts - *_skipped. *_truncated counts packets whose captured length is shorter than the IP length (the
 	## capture's snaplen shows here); they count with their IP length. Zeek ignores truncated ICMP, so
 	## for ICMP conn.log packets = *_pkts - *_skipped - *_truncated. orig/resp are Zeek's
-	## connection roles. Bulk: CIC's rule (4+ payload packets within 1 s, uninterrupted
+	## connection roles. Bulk (TCP and UDP only; 0 for ICMP and other protocols): CIC's rule (4+ payload packets within 1 s, uninterrupted
 	## by payload from the other side). subflows = 1 + gaps over 1 s.
 	## orig/resp follow Zeek's final connection roles (decided at the end, not by arrival).
 	type Stats: record {
