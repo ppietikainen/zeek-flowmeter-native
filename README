@@ -1,6 +1,0 @@
-Flow::Meter -- per-connection flow statistics (CICFlowMeter-style feature set,
-documented semantics) as a native Zeek plugin. A tap analyzer sees every packet
-of every connection; no per-packet script events. One flowmeter.log row per
-connection, keyed by uid, so it joins to conn.log, dns.log, ja4 and the rest.
-
-Development rule: do not use CIC-IDS2017 pcaps or anything derived from them; they are the held-out set for the equivalence test.

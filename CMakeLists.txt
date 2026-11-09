@@ -22,6 +22,6 @@ add_compile_definitions(FLOWMETER_VERSION="${FLOWMETER_VERSION}")
 
 zeek_plugin_begin(Flow Meter ${ZEEK_PLUGIN_BEGIN_OPTS})
 zeek_plugin_cc(src/Plugin.cc src/FlowStats.cc)
-zeek_plugin_dist_files(README COPYING VERSION)
+zeek_plugin_dist_files(README.md COPYING VERSION)
 zeek_plugin_scripts(scripts/__load__.zeek scripts/main.zeek scripts/version.zeek.in)
 zeek_plugin_end()
