@@ -42,6 +42,14 @@ export ZEEK_PLUGIN_PATH=$PWD/build:$(zeek-config --plugin_dir)
 `cd build && make install` installs it into Zeek's plugin directory instead. `zeek -N
 Flow::Meter` shows whether Zeek has loaded it.
 
+Or as a container: the `Dockerfile` builds the plugin on the Zeek project's
+image, pinned by digest, with no other plugins or packages.
+
+```
+podman build -t flowmeter:0.1.0 .        # or docker build
+podman run -i --rm -v "$PWD":/o:z flowmeter:0.1.0 -r - Flow::Meter < trace.pcap
+```
+
 ## Output
 
 `flowmeter.log`: `ts`, `uid`, and a record `fm` with the statistics (`fm.orig_pkts`,
