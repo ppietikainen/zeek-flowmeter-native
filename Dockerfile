@@ -5,7 +5,7 @@
 #
 # The base is the Zeek project's own image, pinned by digest, so a build names
 # exactly the Zeek it ran on. Override BASE for another release.
-ARG BASE=docker.io/zeek/zeek:9.0.0@sha256:70733f4e540ba1608e37e00c6a93d009f79734262c9ec2ba09d90aa9abc16de5
+ARG BASE=docker.io/zeek/zeek:9.0.1@sha256:524cb0ce29f26a6a954fb9c357a8f92b95812476d8240f0ece26617ace249dd0
 
 FROM ${BASE} AS build
 RUN apt-get update \

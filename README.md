@@ -22,7 +22,7 @@ computation into a compiled plugin. This is that plugin.
 
 ## Build and run
 
-Needs Zeek (developed against 9.0) with its development headers, CMake and a
+Needs Zeek (developed against 9.0; the Dockerfile uses 9.0.1) with its development headers, CMake and a
 C++20 compiler.
 
 ```
